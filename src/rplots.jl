@@ -155,7 +155,7 @@ function rplot(v::AbstractVector)
   end
 end
 
-function rplot(cort::CorticalRates;rates=AuditoryModel.rates(cort))
+function rplot(cort::CorticalRates;rates=ShammaModel.rates(cort))
   cort = cort[:,atvalue.(rates),:]
   @show size(cort)
   @show typeof(cort)
@@ -191,7 +191,7 @@ R"""
 """
 end
 
-function rplot(cort::CorticalScales;scales=AuditoryModel.scales(cort),
+function rplot(cort::CorticalScales;scales=ShammaModel.scales(cort),
                fn=identity)
   cort = cort[:,atvalue.(scales),:]
   ixs = CartesianIndices(cort)
@@ -226,8 +226,8 @@ R"""
 end
 
 
-function rplot(cort::Cortical;rates=AuditoryModel.rates(cort),
-               scales=AuditoryModel.scales(cort),fn=identity)
+function rplot(cort::Cortical;rates=ShammaModel.rates(cort),
+               scales=ShammaModel.scales(cort),fn=identity)
   cort = cort[:,atvalue.(rates),atvalue.(scales),:]
   ixs = CartesianIndices(cort)
   at(ixs,i) = map(x -> x[i],ixs)

@@ -1,4 +1,4 @@
-module AuditoryModel
+module ShammaModel
 using DataFrames
 using Unitful
 using Unitful: ms, s, Hz, kHz
@@ -29,7 +29,7 @@ function __init__()
 
   merge!(Unitful.basefactors, localunits)
   merge!(Unitful.promotion, localpromotion)
-  Unitful.register(AuditoryModel)
+  Unitful.register(ShammaModel)
 end
 
 end

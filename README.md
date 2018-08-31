@@ -15,7 +15,7 @@ You can find the original MATLAB implementation of these models
 - Document function interfaces
 - Improve plotting (don't require R)
 - And a few example uses
-- Improve and generify the `AuditoryModel.Result` type and make it its own
+- Improve and generify the `ShammaModel.Result` type and make it its own
   package for handling arrays with metadata.
 
 # Status
