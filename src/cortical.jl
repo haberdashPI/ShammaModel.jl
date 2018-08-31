@@ -1,4 +1,5 @@
 using AxisArrays
+using FFTW
 
 export rates, scales, nrates, nscales, default_rates, default_scales,
   cortical, cycoct, co
@@ -18,20 +19,20 @@ struct CParams{R,S} <: Params
       error("You must specify the rates and/or scales.")
     end
     new{R,S}(aspect,
-             rates == nothing ? nothing : sort(rates),
-             scales == nothing ? nothing :sort(scales),bandonly)
+             (rates == nothing) ? nothing : sort(rates),
+             (scales == nothing) ? nothing : sort(scales),bandonly)
   end
 end
-const CParamScales{S} = CParams{Void,S}
-const CParamRates{R} = CParams{R,Void}
+const CParamScales{S} = CParams{Nothing,S}
+const CParamRates{R} = CParams{R,Nothing}
 const CParamAll = CParams{R,S} where {R <: AbstractArray,S <: AbstractArray}
 
 struct Cortical{T,N,R,S} <: Result{T,N}
   val::AxisArray{T,N}
   params::CParams{R,S}
 end
-const CorticalScales{T,N,S} = Cortical{T,N,Void,S}
-const CorticalRates{T,N,R} = Cortical{T,N,R,Void}
+const CorticalScales{T,N,S} = Cortical{T,N,Nothing,S}
+const CorticalRates{T,N,R} = Cortical{T,N,R,Nothing}
 AxisArrays.AxisArray(x::Cortical) = x.val
 Params(x::Cortical) = x.params
 similar_helper(::Cortical,data,params) = Cortical(data,params)
@@ -55,12 +56,12 @@ freqs(x::CParams) = freqs(x.aspect)
 
 rates(x::CParams) = x.rates
 rates(x::Result) = rates(AxisArray(x))
-rates(x::AxisArray) = axisvalues(axes(x,Axis{:rate}))[1]
+rates(x::AxisArray) = axisvalues(AxisArrays.AxisArrays.axes(x,Axis{:rate}))[1]
 nrates(x) = length(rates(x))
 
 scales(x::CParams) = x.scales
 scales(x::Result) = scales(AxisArray(x))
-scales(x::AxisArray) = axisvalues(axes(x,Axis{:scale}))[1]
+scales(x::AxisArray) = axisvalues(AxisArrays.AxisArrays.axes(x,Axis{:scale}))[1]
 nscales(x) = length(scales(x))
 
 Δt(c::CParams) = Δt(c.aspect)
@@ -68,8 +69,8 @@ nscales(x) = length(scales(x))
 
 hastimes(c::Cortical) = HasTimes()
 
-const default_rates = sort([-2.^(1:0.5:5); 2.^(1:0.5:5)]).*Hz
-const default_scales = (2.^(-2:0.5:3)).*cycoct
+const default_rates = sort([-2 .^ (1:0.5:5); 2 .^ (1:0.5:5)]).*Hz
+const default_scales = (2 .^ (-2:0.5:3)).*cycoct
 
 CParams(x::AbstractArray;rates=nothing,scales=nothing,
         bandonly=false,params...) =
@@ -96,9 +97,9 @@ const spect_rate = 24
 
 # cortical responses of rates and scales simultaneously
 asHz(x) = x.*Hz
-asHz(::Void) = nothing
+asHz(::Nothing) = nothing
 ascycoct(x) = x.*cycoct
-ascycoct(::Void) = nothing
+ascycoct(::Nothing) = nothing
 function cortical(y::AbstractArray;progressbar=true,
                   rates_Hz=nothing,rates=asHz(rates_Hz),
                   scales_cycoct=nothing,scales=ascycoct(scales_cycoct),
@@ -201,7 +202,7 @@ function cortical(y::Result,params::CParamRates,progressbar=true,
 
   cr = initcr(y,params)
   for (ri,HR) in enumerate(rate_filters(fir,cr,params))
-    cr[Axis{:rate}(ri)] = view(apply(fir,HR),indices(y)...)
+    cr[Axis{:rate}(ri)] = view(apply(fir,HR),Base.axes(y)...)
     next!(progress)
   end
 
@@ -224,8 +225,8 @@ function cortical(y::Result,params::CParamScales,progressbar=true,
 
   cs = initcr(y,params)
   for (si,HS) in enumerate(scale_filters(fir,cs,params))
-    z = apply(fir,conj.(vecperm([HS; zeros(HS)],ndims(y))))
-    cs[Axis{:scale}(si)] = view(z,indices(y)...)
+    z = apply(fir,conj.(vecperm([HS; zero(HS)],ndims(y))))
+    cs[Axis{:scale}(si)] = view(z,Base.axes(y)...)
     next!(progress)
   end
 
@@ -248,13 +249,13 @@ function audiospect(cr::Cortical;norm=0.9,progressbar=true)
   progress = progressbar ? cortical_progress(nrates(cr)*nscales(cr)) : nothing
   for (ri,HR) in enumerate(rate_filters(z_cum,cr,use_conj=true))
     for (si,HS) in enumerate(scale_filters(z_cum,cr))
-      addfft!(z_cum,cr[:,ri,si,:],HR.*[HS; zeros(HS)]')
+      addfft!(z_cum,cr[:,ri,si,:],HR.*[HS; zero(HS)]')
       next!(progress)
     end
   end
 
-  t = axes(AxisArray(cr),Axis{:time})
-  f = axes(AxisArray(cr),Axis{:freq})
+  t = AxisArrays.axes(AxisArray(cr),Axis{:time})
+  f = AxisArrays.axes(AxisArray(cr),Axis{:freq})
   AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),
                       Params(cr).aspect)
 end
@@ -272,8 +273,8 @@ function audiospect(cr::CorticalScales;norm=0.9,progressbar=true)
     addfft!(z_cum,cr[:,si,:],[HS; zeros(HS)]')
     next!(progress)
   end
-  t = axes(AxisArray(cr),Axis{:time})
-  f = axes(AxisArray(cr),Axis{:freq})
+  t = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:time})
+  f = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:freq})
 
   AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),
                       cr.params.aspect)
@@ -291,8 +292,8 @@ function audiospect(cr::CorticalRates;norm=0.9,progressbar=true)
     addfft!(z_cum,cr[:,ri,:],HR)
     next!(progress)
   end
-  t = axes(AxisArray(cr),Axis{:time})
-  f = axes(AxisArray(cr),Axis{:freq})
+  t = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:time})
+  f = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:freq})
 
   AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),cr.params.aspect)
 end
@@ -314,8 +315,8 @@ struct FIRFiltering{T,N}
 end
 
 function FIRFiltering(y,axis)
-  dims = map(axes(y)) do ax
-    if axes(y,axis) == ax
+  dims = map(AxisArrays.AxisArrays.axes(y)) do ax
+    if AxisArrays.AxisArrays.axes(y,axis) == ax
       2nextprod([2,3,5],length(ax))
     else
       length(ax)
@@ -332,7 +333,7 @@ Base.ndims(x::FIRFiltering) = ndims(x.Y)
 
 function initcr(y,params::CParamRates)
   r = Axis{:rate}(params.rates)
-  ax = axes(y)
+  ax = AxisArrays.AxisArrays.axes(y)
   newax = ax[1],r,ax[2:end]...
 
   AxisArray(zeros(complex(eltype(y)),length.(newax)...),newax...)
@@ -340,7 +341,7 @@ end
 
 function initcr(y,params::CParamScales)
   s = Axis{:scale}(params.scales)
-  ax = axes(y)
+  ax = AxisArrays.AxisArrays.axes(y)
   newax = ax[1:end-1]...,s,ax[end]
 
   AxisArray(zeros(complex(eltype(y)),length.(newax)...),newax...)
@@ -362,11 +363,11 @@ struct FFTCum{T}
 end
 
 function FFTCum(cr::Cortical)
-  dims = find_fft_dims(size(cr,1,ndims(cr)))
+  dims = find_fft_dims((size(cr,1),size(cr,ndims(cr))))
   mult = 1 .+ (Params(cr).rates != nothing,Params(cr).scales != nothing)
   z = zeros(eltype(cr),dims .* mult)
 
-  FFTCum(z,zeros(z),zeros(real(eltype(z)),size(z)...),plan_fft(z))
+  FFTCum(z,copy(z),zeros(real(eltype(z)),size(z)...),plan_fft(z))
 end
 
 Base.size(x::FFTCum,i...) = size(x.z_cum,i...)
@@ -380,22 +381,22 @@ function addfft!(x::FFTCum,cr,h)
   x
 end
 
-function Base.normalize!(x::FFTCum,cr,norm)
+function normalize!(x::FFTCum,cr,norm)
   x.h_cum[:,1] .*= 2
   old_sum = sum(x.h_cum[:,nfreqs(cr)])
-  x.h_cum .= norm.*x.h_cum + (1 .- norm).*maximum(x.h_cum)
-  x.h_cum .*= old_sum ./ sum(x.h_cum[:,nfreqs(cr)])
+  x.h_cum .= norm.*x.h_cum .+ (1 .- norm).*maximum(x.h_cum)
+  x.h_cum .*= old_sum ./ sum(view(x.h_cum,:,nfreqs(cr)))
   x.z_cum ./= x.h_cum
 
-  spectc = (x.plan \ x.z_cum)[1:ntimes(cr),1:nfreqs(cr)]
-  max.(real.(2.*spectc),0)
+  spectc = view((x.plan \ x.z_cum),1:ntimes(cr),1:nfreqs(cr))
+  max.(real.(2 .* spectc),0)
 end
 
 pad(x,lens) = pad(x,lens...)
 function pad(x,lens::T...) where T <: Number
   @assert all(size(x) .<= lens)
   y = zeros(eltype(x),lens)
-  y[indices(x)...] = x
+  y[Base.axes(x)...] = x
   y
 end
 
@@ -407,9 +408,9 @@ function askind(H,len,maxi,kind,nonorm)
   else
     old_sum = sum(H)
     if kind == :low
-      H[1:maxi-1] = 1
+      H[1:maxi-1] .= 1
     elseif kind == :high
-      H[maxi+1:len] = 1
+      H[maxi+1:len] .= 1
     else
       error("Unexpected filter kind '$kind'.")
     end
@@ -439,7 +440,7 @@ function scale_filter(scale,len,ts,kind)
   f2 = ((0:len-1)./len.*ts ./ 2 ./ abs(scale)).^2
   H = f2 .* exp.(1 .- f2)
 
-  askind(H,len,indmax(H),kind,false)
+  askind(H,len,argmax(H),kind,false)
 end
 
 function rate_filters(Y,x,params=Params(x);use_conj=false)

@@ -49,7 +49,7 @@ function Base.similar(x::Result,::Type{S},ax1::Axis,axs::Axis...) where S
 end
 
 function showparams(io,x)
-  for field in fieldnames(x)
+  for field in fieldnames(typeof(x))
     showfield(io,field,getfield(x,field))
   end
 end
@@ -79,17 +79,18 @@ function Base.show(io::IO,x::Result{T,N}) where {T,N}
     showparams(io,Params(x))
     write(io,"-------\n")
     write(io,"$(N)d $T data with axes: \n")
-    for ax in axes(AxisArray(x))
-      write(io,"$(AxisArrays.axisname(ax)): $(round(ustrip(ax.val[1]),2))"*
-            " - $(round(ustrip(ax.val[end]),2)) $(unit(ax.val[1]))\n")
+    for ax in AxisArrays.axes(AxisArray(x))
+      write(io,"$(AxisArrays.axisname(ax)): "*
+            "$(round(ustrip(ax.val[1]),digits=2))"*
+            " - $(round(ustrip(ax.val[end]),digits=2)) $(unit(ax.val[1]))\n")
     end
   end
 end
 Base.show(io::IO,::MIME"text/plain",x::Result) = show(io,x)
 
 AxisArrays.axisdim(x::Result,ax) = axisdim(AxisArray(x),ax)
-AxisArrays.axes(x::Result,i::Int...) = axes(AxisArray(x),i...)
-AxisArrays.axes(x::Result,T::Type{<:Axis}...) = axes(AxisArray(x),T...)
-AxisArrays.axes(x::Result) = axes(AxisArray(x))
+AxisArrays.axes(x::Result,i::Int...) = AxisArrays.axes(AxisArray(x),i...)
+AxisArrays.axes(x::Result,T::Type{<:Axis}...) = AxisArrays.axes(AxisArray(x),T...)
+AxisArrays.axes(x::Result) = AxisArrays.axes(AxisArray(x))
 AxisArrays.axisnames(x::Result) = axisnames(AxisArray(x))
 AxisArrays.axisvalues(x::Result) = axisvalues(AxisArray(x))

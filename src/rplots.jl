@@ -1,18 +1,18 @@
-using RCall
+using .RCall
 using DataFrames
-using JLD2
 
 export rplot, collapsed_scale_plot
+using Colors
 import Colors: RGB
 
 # TODO??: move to seperate file that is always loaded
 # so both rplots and vplots can use it
 const cmap = Dict{Symbol,Vector{RGB}}()
-jldopen(joinpath(@__DIR__,"..","data","colormaps.jld2")) do file
-  cmap[:D1] = file["D1"]
-  cmap[:reds] = file["reds"]
-  cmap[:C6] = file["C6"]
-end
+datadir = joinpath(@__DIR__,"..","data")
+ascolors(lines) = parse.(Color,"#".*readlines(lines))
+cmap[:D1] = ascolors(joinpath(datadir,"diverging_colors.txt"))
+cmap[:reds] = ascolors(joinpath(datadir,"reds.txt"))
+cmap[:C6] = ascolors(joinpath(datadir,"circular_colors.txt"))
 
 R"library(ggplot2)"
 
@@ -80,17 +80,17 @@ end
 
 
 function rplot(x::AxisArray{T,2}) where T
-  ixs = CartesianRange(size(x))
+  ixs = CartesianIndices(x)
   at(ixs,i) = map(x -> x[i],ixs)
   timeax = axisdim(x,Axis{:time})
   otherax = timeax == 1 ? 2 : 1
   @show timeax
   @show otherax
-  othername = AxisArrays.axisname(axes(x,otherax))
+  othername = AxisArrays.axisname(AxisArrays.axes(x,otherax))
 
   df = DataFrame(response = vec(x),
                  time = vec(ustrip.(uconvert.(s,times(x)[at(ixs,timeax)]))))
-  df[othername] = vec(string.(AxisArrays.axisvalues(axes(x,otherax))[1][at(ixs,otherax)]))
+  df[othername] = vec(string.(AxisArrays.axisvalues(AxisArrays.axes(x,otherax))[1][at(ixs,otherax)]))
   p = raster_plot(df,value=:response,x=:time,y=othername)
 
 R"""
@@ -104,7 +104,7 @@ end
 
 
 function rplot(z::AbstractMatrix)
-  ixs = CartesianRange(size(z))
+  ixs = CartesianIndices(z)
   at(ixs,i) = map(x -> x[i],ixs)
 
   df = DataFrame(response = vec(z),
@@ -122,7 +122,7 @@ R"""
 end
 
 function rplot(as::AuditorySpectrogram)
-  ixs = CartesianRange(size(as))
+  ixs = CartesianIndices(as)
   at(ixs,i) = map(x -> x[i],ixs)
 
   df = DataFrame(response = vec(as),
@@ -159,7 +159,7 @@ function rplot(cort::CorticalRates;rates=AuditoryModel.rates(cort))
   cort = cort[:,atvalue.(rates),:]
   @show size(cort)
   @show typeof(cort)
-  ixs = CartesianRange(size(cort))
+  ixs = CartesianIndices(cort)
   at(ixs,i) = map(x -> x[i],ixs)
 
   df = DataFrame(response = vec(cort),
@@ -194,7 +194,7 @@ end
 function rplot(cort::CorticalScales;scales=AuditoryModel.scales(cort),
                fn=identity)
   cort = cort[:,atvalue.(scales),:]
-  ixs = CartesianRange(size(cort))
+  ixs = CartesianIndices(cort)
   at(ixs,i) = map(x -> x[i],ixs)
 
   df = DataFrame(response = fn.(vec(cort)),
@@ -229,7 +229,7 @@ end
 function rplot(cort::Cortical;rates=AuditoryModel.rates(cort),
                scales=AuditoryModel.scales(cort),fn=identity)
   cort = cort[:,atvalue.(rates),atvalue.(scales),:]
-  ixs = CartesianRange(size(cort))
+  ixs = CartesianIndices(cort)
   at(ixs,i) = map(x -> x[i],ixs)
 
   df = DataFrame(response = fn.(vec(cort)),
@@ -275,7 +275,7 @@ function collapsed_scale_plot(cort;range=nothing)
 
   dims = Tuple(find(indexin(1:ndims(cort),[scaledim,timedim]) .== 0))
   y = squeeze(mean(abs.(AxisArray(cort).data),dims),dims)
-  ixs = CartesianRange(size(y))
+  ixs = CartesianIndices(y)
   at(ixs,i) = map(x -> x[i],ixs)
 
   df = DataFrame(response = vec(y),
