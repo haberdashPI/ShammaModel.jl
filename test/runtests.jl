@@ -1,5 +1,5 @@
 using Test
-using AuditoryModel
+using ShammaModel
 using AxisArrays
 using SampledSignals
 using Statistics
