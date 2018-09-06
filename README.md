@@ -22,7 +22,3 @@ You can find the original MATLAB implementation of these models
 
 These functions are quite stable; I'm using them extensively in other projects.
 They have not been cleaned up to make them accessible in any way yet.
-
-There are a few small oddities about how the parameters are defined that differ
-from the original paper: I need to clean these up eventually but they don't
-degrade the functionality, just make it harder to specify parameters.
