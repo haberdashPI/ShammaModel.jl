@@ -270,7 +270,7 @@ function audiospect(cr::CorticalScales;norm=0.9,progressbar=true)
 
   progress = progressbar ? cortical_progress(nscales(cr)) : nothing
   for (si,HS) in enumerate(scale_filters(z_cum,cr))
-    addfft!(z_cum,cr[:,si,:],[HS; zeros(HS)]')
+    addfft!(z_cum,cr[:,si,:],[HS; zero(HS)]')
     next!(progress)
   end
   t = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:time})
