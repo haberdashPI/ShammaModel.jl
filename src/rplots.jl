@@ -84,8 +84,6 @@ function rplot(x::AxisArray{T,2}) where T
   at(ixs,i) = map(x -> x[i],ixs)
   timeax = axisdim(x,Axis{:time})
   otherax = timeax == 1 ? 2 : 1
-  @show timeax
-  @show otherax
   othername = AxisArrays.axisname(AxisArrays.axes(x,otherax))
 
   df = DataFrame(response = vec(x),
