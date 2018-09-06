@@ -1,3 +1,4 @@
+
 using AxisArrays
 using DSP
 using JLD2
@@ -20,13 +21,14 @@ thunk(filter::NamedTuple) = x -> DSP.filt(filter.B,filter.A,x)
 # auditory spectrogram data type and its parameters
 const fixed_fs = 8000
 
-struct ASParams <: Params
+struct ASParams{T} <: Params
   Δt::typeof(1.0s)
   decay_tc::Float64
   nonlinear::Float64
   octave_shift::Float64
   freq_step::Int
   fs::typeof(1.0Hz)
+  cochlear::T
 end
 
 struct AuditorySpectrogram{T} <: Result{T,2}
@@ -39,7 +41,7 @@ resultname(x::AuditorySpectrogram) = "Auditory Spectrogram"
 similar_helper(::AuditorySpectrogram,data,params) =
   AuditorySpectrogram(data,params)
 
-num_base_freqs(as::Params) = length(cochlear[].filters)-1
+num_base_freqs(as::Params) = length(as.cochlear.filters)-1
 nfreqs(as::ASParams) =
   floor(Int,(num_base_freqs(as))/as.freq_step)
 nfreqs(x) = length(freqs(x))
@@ -89,7 +91,9 @@ function ASParams(x;fs=usamplerate(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
                   octave_shift=-1)
   @assert fs == fixed_fs*Hz "The only sample rate supported is $(fixed_fs)Hz"
 
-  p = ASParams(Δt,decay_tc,nonlinear,octave_shift,freq_step,fs)
+  p = ASParams(uconvert(s,float(Δt)),Float64(decay_tc),Float64(nonlinear),
+               Float64(octave_shift),Int(freq_step),uconvert(Hz,float(fs)),
+               cochlear[])
 
   recommended_length = 2^(4+p.octave_shift)
   if frame_length(p) < recommended_length
@@ -149,7 +153,7 @@ end
 
 function audiospect_helper(x::AbstractVector{T}, params::ASParams,
                            progressbar=true, internal_call=false) where {T}
-  M = length(cochlear[].filters)
+  M = length(params.cochlear.filters)
 
   frame_len  = frame_length(params)
   N = ceil(Int,length(x) / frame_len) # of frames
@@ -160,14 +164,15 @@ function audiospect_helper(x::AbstractVector{T}, params::ASParams,
   Y_haircell = !internal_call ? fill(zero(T),0,0) : fill(zero(T),length(x),M-1)
 
   last_haircell = x |>
-    thunk(cochlear[].filters[M]) |>
+    thunk(params.cochlear.filters[M]) |>
     ion_channels(params) |>
     haircell_membrane(params)
 
   progress = progressbar ? Progress(desc="Auditory Spectrogram: ",M-1) : nothing
   for ch = (M-1):-1:1
     # initial haircell transduction
-    y,last_haircell = x |> thunk(cochlear[].filters[ch]) |>
+    y,last_haircell = x |> 
+      thunk(params.cochlear.filters[ch]) |>
       ion_channels(params) |>
       haircell_membrane(params) |>
       lateral_inhibition(last_haircell)
@@ -199,7 +204,7 @@ function SampledSignals.SampleBuf(y_in::AuditorySpectrogram;
           "No stopping criterion specified (max_iterations or target_error).")
   params = y_in.params
 
-  M = length(cochlear[].filters)
+  M = length(params.cochlear.filters)
 
   # expand y to include all frequencies
   y = zeros(eltype(y_in),size(y_in,1),M-1)
@@ -292,7 +297,7 @@ function ion_channels(params::ASParams)
   elseif params.nonlinear == -1
     x -> max.(x,0.0)
   elseif params.nonlinear == -2
-    x -> Float64.(x)
+    identity
     # TODO: implement halfregu
   else
     error("Non linear factor of $fac not supported")
@@ -302,7 +307,7 @@ end
 function haircell_membrane(params)
   if params.nonlinear  != -2
     β = exp(-1/((1//2)*2^(4+params.octave_shift)))
-    y -> filt([1.0],[1.0; -β])
+    y -> filt([1.0],[1.0; -β],y)
   else
     identity
   end
@@ -342,7 +347,7 @@ function inv_guess(params::ASParams,y::AbstractMatrix)
 end
 
 function match_x(params::ASParams,x,y,ŷ,ŷ_haircell)
-  M = length(cochlear[].filters)
+  M = length(params.cochlear.filters)
   steps = 1:frame_length(params)*size(y,1)
   indices = ceil.(Int,steps / frame_length(params))
 
@@ -351,7 +356,7 @@ function match_x(params::ASParams,x,y,ŷ,ŷ_haircell)
   end
 
   x .= 0
-  ch_norm = cochlear[].norm
+  ch_norm = params.cochlear.norm
   for ch in 1:M-1
     if params.nonlinear == -2
       y1 = ŷ_haircell[:,ch].*view(ratios,indices,ch)
@@ -364,7 +369,7 @@ function match_x(params::ASParams,x,y,ŷ,ŷ_haircell)
       y1[negi] .*= maximum(y1[posi]) / -minimum(y1[negi])
     end
 
-    x .+= reverse(thunk(cochlear[].filters[ch])(reverse(y1))) ./ ch_norm
+    x .+= reverse(thunk(params.cochlear.filters[ch])(reverse(y1))) ./ ch_norm
   end
 
   x
