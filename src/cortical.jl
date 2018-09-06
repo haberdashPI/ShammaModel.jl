@@ -434,9 +434,6 @@ end
 
 # create the frequency-scale filter (filter along spectral axis)
 function scale_filter(scale,len,ts,kind)
-  # TODO: ./2 should be outside parens, not change for now since this just
-  # changes the magnitude of scales and I want to check that all the other
-  # changes I've made make sense before fixing this
   f2 = ((0:len-1)./len.*ts ./ 2 ./ abs(scale)).^2
   H = f2 .* exp.(1 .- f2)
 
