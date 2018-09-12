@@ -148,10 +148,10 @@ function audiospect(x::SampleBuf,params::ASParams,progressbar=true)
   if usamplerate(x) != fixed_fs*Hz
     error("Unsupported sample rate. Must be $(fixed_fs).")
   end
-  audiospect_helper(x,params,progressbar)
+  audiospect_helper(Array(x),params,progressbar)
 end
 
-function audiospect_helper(x::AbstractVector{T}, params::ASParams,
+function audiospect_helper(x::Vector{T}, params::ASParams,
                            progressbar=true, internal_call=false) where {T}
   M = length(params.cochlear.filters)
 
