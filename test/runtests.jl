@@ -14,7 +14,7 @@ err = 0.05
 x_hat = SampleBuf(X,target_error=err,max_iterations=1000)
 as_x_hat = audiospect(x_hat)
 @testset "Spectrogram" begin
-  @test_throws AssertionError audiospect(SampleBuf(collect(1:10),4000))
+  @test_throws ErrorException audiospect(SampleBuf(collect(1:10),4000))
   @test mean(X[:,0.9kHz ..1.1kHz]) > mean(X[:,1.9kHz .. 2.1kHz])
   @test sum((as_x_hat .* (mean(X) / mean(as_x_hat)) .- X).^2) ./
     sum(X.^2) <= err
