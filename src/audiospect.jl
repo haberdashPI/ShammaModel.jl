@@ -15,7 +15,7 @@ export freqs, times, nfreqs, ntimes, delta_t, delta_f, Δt, Δf, frame_length,
 ########################################
 # cochlear filters
 
-thunk(filter::NamedTuple) = x -> DSP.filt(filter.B,filter.A,x)
+(filter::Filter)(x) = DSP.filt(filter.B,filter.A,x)
 
 ########################################
 # auditory spectrogram data type and its parameters
@@ -86,7 +86,10 @@ usamplerate(x::Result) = usamplerate(Params(x))
 usamplerate(x::SampleBuf) = samplerate(x)*Hz
 SampledSignals.samplerate(x::Result) = samplerate(Params(x))
 
-function ASParams(x;fs=usamplerate(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
+default_sr(x) = 8000.0Hz
+default_sr(x::SampleBuf) = 8000.0Hz
+
+function ASParams(x;fs=default_sr(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
                   freq_step=1,Δt=delta_t,decay_tc=8,nonlinear=-2,
                   octave_shift=-1)
   @assert fs == fixed_fs*Hz "The only sample rate supported is $(fixed_fs)Hz"
@@ -164,7 +167,7 @@ function audiospect_helper(x::Vector{T}, params::ASParams,
   Y_haircell = !internal_call ? fill(zero(T),0,0) : fill(zero(T),length(x),M-1)
 
   last_haircell = x |>
-    thunk(params.cochlear.filters[M]) |>
+    params.cochlear.filters[M] |>
     ion_channels(params) |>
     haircell_membrane(params)
 
@@ -172,7 +175,7 @@ function audiospect_helper(x::Vector{T}, params::ASParams,
   for ch = (M-1):-1:1
     # initial haircell transduction
     y,last_haircell = x |> 
-      thunk(params.cochlear.filters[ch]) |>
+      params.cochlear.filters[ch] |>
       ion_channels(params) |>
       haircell_membrane(params) |>
       lateral_inhibition(last_haircell)
@@ -369,7 +372,7 @@ function match_x(params::ASParams,x,y,ŷ,ŷ_haircell)
       y1[negi] .*= maximum(y1[posi]) / -minimum(y1[negi])
     end
 
-    x .+= reverse(thunk(params.cochlear.filters[ch])(reverse(y1))) ./ ch_norm
+    x .+= reverse(params.cochlear.filters[ch](reverse(y1))) ./ ch_norm
   end
 
   x

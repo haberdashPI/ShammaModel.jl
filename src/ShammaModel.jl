@@ -10,20 +10,34 @@ export ms, s, Hz, kHz
 next!(x::Progress) = ProgressMeter.next!(x)
 next!(x::Nothing) = nothing
 
+struct Filter
+  A::Vector{Float64}
+  B::Vector{Float64}
+end
+struct CochFilters
+  filters::Vector{Filter}
+  norm::Float64
+end
+const cochlear = Ref{CochFilters}()
+
 include("modelresult.jl")
 include("audiospect.jl")
 include("cortical.jl")
-
-const Filter = NamedTuple{(:A, :B),Tuple{Array{Float64,1},Array{Float64,1}}}
-const Filters = NamedTuple{(:norm, :filters),Tuple{Float64,Array{Filter}}}
-const cochlear = Ref{Filters}()
 
 # include("rplots.jl")
 # include("vplots.jl")
 const localunits = Unitful.basefactors
 const localpromotion = Unitful.promotion
 function __init__()
-  cochlear[] = load(joinpath(@__DIR__,"..","data","cochba.jld2"),"cochba")
+  cochlear[] = jldopen(joinpath(@__DIR__,"..","data","cochba.jld2"),"r") do file
+    filters = map(keys(file["filters"])) do ch
+      A = file["filters/$ch/A"]
+      B = file["filters/$ch/B"]
+      Filter(A,B)
+    end
+    CochFilters(filters,file["norm"])
+  end
+
   @require RCall="6f49c342-dc21-5d91-9882-a32aef131414" include("rplots.jl")
   # @require VegaLite include("rplots.jl")
 
