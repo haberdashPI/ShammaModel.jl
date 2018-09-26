@@ -31,6 +31,9 @@ struct ASParams{T} <: Params
   cochlear::T
 end
 
+# const AuditorySpectrogram = MetaArray{<:AxisArray,ASParams}
+# const ASParamLike = Union{ASParams,AuditorySpectrogram}
+
 struct AuditorySpectrogram{T} <: Result{T,2}
   val::AxisArray{T,2}
   params::ASParams
@@ -194,6 +197,7 @@ function audiospect_helper(x::Vector{T}, params::ASParams,
     f = Axis{:freq}(freqs(params))
     t = Axis{:time}(times(params,Y))
 
+    # MetaData(params,AxisArray...)
     AuditorySpectrogram(AxisArray(Y[:,1:params.freq_step:end],t,f),params)
   end
 end

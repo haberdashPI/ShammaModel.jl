@@ -1,7 +1,7 @@
 name = "ShammaModel"
 uuid = "80f90042-ac61-11e8-0ace-f1a8d5e03555"
 authors = ["David Little <david.frank.little@gmail.com>"]
-version = "0.1.1"
+version = "0.1.2"
 
 [deps]
 AxisArrays = "39de3d68-74b9-583c-8d2d-e117c070f3a9"
@@ -17,3 +17,15 @@ SampledSignals = "bd7594eb-a658-542f-9e75-4c4d8908c167"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[compat]
+AxisArrays = "0.3.0"
+Colors = "0.9.4"
+DSP = "0.5.1"
+DataFrames = "0.14.0"
+FFTW = "0.2.4"
+FileIO = "1.0.1"
+JLD2 = "0.1.2"
+ProgressMeter = "0.6.0"
+Requires = "0.5.2"
+Unitful = "0.11.0"
