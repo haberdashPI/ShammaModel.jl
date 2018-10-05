@@ -16,7 +16,7 @@ cmap[:C6] = ascolors(joinpath(datadir,"circular_colors.txt"))
 
 R"library(ggplot2)"
 
-function raster_plot(z::AbstractMatrix;x=indices(z,1),y=indices(z,2))
+function raster_plot(z::AbstractMatrix;x=Base.axes(z,1),y=Base.axes(z,2))
   Y = ones(x) .* y'
   X = x .* ones(y)'
   df = DataFrame(x = vec(X),y=vec(Y),z = vec(z))
