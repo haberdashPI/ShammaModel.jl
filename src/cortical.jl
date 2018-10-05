@@ -7,7 +7,7 @@ export rates, scales, nrates, nscales, default_rates, default_scales,
 @dimension Sc "Sc" Scale
 @refunit cycoct "cyc/oct" CyclesPerOct Sc false
 
-struct CParams{R,S} <: Params
+struct CParams{R,S} 
   aspect::ASParams
   rates::R
   scales::S
@@ -27,22 +27,22 @@ const CParamScales{S} = CParams{Nothing,S}
 const CParamRates{R} = CParams{R,Nothing}
 const CParamAll = CParams{R,S} where {R <: AbstractArray,S <: AbstractArray}
 
-struct Cortical{T,N,R,S} <: Result{T,N}
-  val::AxisArray{T,N}
-  params::CParams{R,S}
-end
-const CorticalScales{T,N,S} = Cortical{T,N,Nothing,S}
-const CorticalRates{T,N,R} = Cortical{T,N,R,Nothing}
-AxisArrays.AxisArray(x::Cortical) = x.val
-Params(x::Cortical) = x.params
-similar_helper(::Cortical,data,params) = Cortical(data,params)
+const Cortical{R,S} = MetaArray{<:AxisArray, <: CParams{R,S}}
+const CorticalScales = Cortical{<:Any,Nothing}
+const CorticalRates = Cortical{Nothing}
+const CParamLike = Union{CParams,Cortical}
+
 resultname(x::Cortical) = "Cortical Rates × Scales"
 resultname(x::CorticalRates) = "Cortical Rates"
 resultname(x::CorticalScales) = "Cortical Scales"
 
-function showparams(io,params::CParams)
-  write(io,"bandonly = $(params.bandonly)\n")
-  showparams(io,params.aspect)
+function Base.show(io::IO,::MIME"text/plain",x::Cortical)
+  if !get(io, :compact, false)
+    println(io,resultname(x))
+    describe_axes(io,x)
+  else
+    println(io,string(duration(x))," ",resultname(x))
+  end
 end
 
 asrates(x::CParams) = CParams(x.aspect,x.rates,nothing,x.bandonly)
@@ -52,20 +52,20 @@ cortical_progress(n) = Progress(desc="Cortical Model: ",n)
 
 frame_length(x::Cortical) = frame_length(x.params.aspect)
 
-freqs(x::CParams) = freqs(x.aspect)
+freqs(x::CParamLike) = freqs(x.aspect)
 
 rates(x::CParams) = x.rates
-rates(x::Result) = rates(AxisArray(x))
-rates(x::AxisArray) = axisvalues(AxisArrays.AxisArrays.axes(x,Axis{:rate}))[1]
+rates(x::Union{AxisArray,Cortical}) =
+  axisvalues(AxisArrays.axes(x,Axis{:rate}))[1]
 nrates(x) = length(rates(x))
 
 scales(x::CParams) = x.scales
-scales(x::Result) = scales(AxisArray(x))
-scales(x::AxisArray) = axisvalues(AxisArrays.AxisArrays.axes(x,Axis{:scale}))[1]
+scales(x::Union{AxisArray,Cortical}) =
+  axisvalues(AxisArrays.axes(x,Axis{:scale}))[1]
 nscales(x) = length(scales(x))
 
-Δt(c::CParams) = Δt(c.aspect)
-Δf(c::CParams) = Δf(c.aspect)
+Δt(c::CParamLike) = Δt(c.aspect)
+Δf(c::CParamLike) = Δf(c.aspect)
 
 hastimes(c::Cortical) = HasTimes()
 
@@ -77,7 +77,7 @@ CParams(x::AbstractArray;rates=nothing,scales=nothing,
   CParams(ASParams(params),rates,scales,bandonly)
 CParams(x::AuditorySpectrogram;rates=nothing,scales=nothing,
         bandonly=false) =
-  CParams(x.params,rates,scales,bandonly)
+  CParams(MetaArrays.getmeta(x),rates,scales,bandonly)
 function CParams(x::CorticalRates;rates=nothing,scales=nothing,
                  bandonly=false,params...)
   @assert rates == nothing "Already analyzed rates."
@@ -130,7 +130,7 @@ function cortical(x::AxisArray{T,4} where T,params::CParamAll,
            "Missing scales in parameters")
   @assert(all(i > 0 for i in indexin(rates(x),rates(params))),
           "Missing rates in parameters")
-  Cortical(x,params)
+  MetaArray(params,x)
 end
 
 function cortical(x::AxisArray{T,3} where T,params::CParamScales,
@@ -140,7 +140,7 @@ function cortical(x::AxisArray{T,3} where T,params::CParamScales,
   @assert :rate ∉ axisnames(x) "Unexpectd rate dimension"
   @assert(all(i > 0 for i in indexin(scales(x),scales(params))),
            "Missing scales in parameters")
-  Cortical(x,params)
+  MetaArray(params,x)
 end
 
 
@@ -151,7 +151,7 @@ function cortical(x::AxisArray{T,3} where T,params::CParamRates,
   @assert(all(i > 0 for i in indexin(rates(x),rates(params))),
           "Missing rates in parameters")
   @assert :scale ∉ axisnames(y) "Unexpectd scale dimension"
-  Cortical(x,params)
+  MetaArray(params,x)
 end
 
 function cortical(y::AbstractArray{T,4} where T,params::CParamAll,
@@ -160,7 +160,7 @@ function cortical(y::AbstractArray{T,4} where T,params::CParamAll,
   r = Axis{:rate}(params.rates)
   sc = Axis{:scale}(params.scales)
   t = Axis{:time}(times(params.aspect,y))
-  Cortical(AxisArray(y,t,r,sc,f),params)
+  MetaArray(params,AxisArray(y,t,r,sc,f))
 end
 
 function cortical(y::AbstractArray{T,3} where T,params::CParamRates,
@@ -168,7 +168,7 @@ function cortical(y::AbstractArray{T,3} where T,params::CParamRates,
   f = Axis{:freq}(freqs(params.aspect))
   r = Axis{:rate}(params.rates)
   t = Axis{:time}(times(params.aspect,y))
-  Cortical(AxisArray(y,t,r,f),params)
+  MetaArray(params,AxisArray(y,t,r,f))
 end
 
 function cortical(y::AbstractArray{T,3} where T,params::CParamScales,
@@ -176,12 +176,13 @@ function cortical(y::AbstractArray{T,3} where T,params::CParamScales,
   f = Axis{:freq}(freqs(params.aspect))
   sc = Axis{:scale}(params.scales)
   t = Axis{:time}(times(params.aspect,y))
-  Cortical(AxisArray(y,t,sc,f),params)
+  MetaArray(params,AxisArray(y,t,sc,f))
 end
 
 ####################
 # actual cortical computation
-function cortical(y::Result,params::CParamAll,progressbar=true)
+const Auditory = Union{AuditorySpectrogram,Cortical}
+function cortical(y::Auditory, params::CParamAll, progressbar=true)
   progress = progressbar ? cortical_progress(nrates(params)+1) : nothing
   cs = cortical(y,asscales(params),false)
   next!(progress)
@@ -189,7 +190,7 @@ function cortical(y::Result,params::CParamAll,progressbar=true)
 end
 
 # cortical responses of rates
-function cortical(y::Result,params::CParamRates,progressbar=true,
+function cortical(y::Auditory, params::CParamRates, progressbar=true,
                   progress=progressbar ? cortical_progress(nrates(params)) :
                   nothing)
 
@@ -206,14 +207,14 @@ function cortical(y::Result,params::CParamRates,progressbar=true,
     next!(progress)
   end
 
-  Cortical(cr,params)
+  MetaArray(params,cr)
 end
-Cortical(cr::AxisArray{T,4} where T,p::CParamRates) =
-  Cortical(cr,CParams(p.aspect,p.rates,scales(cr),p.bandonly))
+MetaArrays.MetaArray(p::CParamRates,cr::AxisArray{T,4} where T) =
+  MetaArray(CParams(p.aspect,p.rates,scales(cr),p.bandonly),cr)
 
 # cortical responses of scales
 vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
-function cortical(y::Result,params::CParamScales,progressbar=true,
+function cortical(y::Auditory,params::CParamScales,progressbar=true,
                   progress=progressbar ? cortical_progress(nscales(params)) :
                   nothing)
   if :scale ∈ axisnames(y)
@@ -230,17 +231,17 @@ function cortical(y::Result,params::CParamScales,progressbar=true,
     next!(progress)
   end
 
-  Cortical(cs,params)
+  MetaArray(params,cs)
 end
-Cortical(cr::AxisArray{T,4} where T,p::CParamScales) =
-  Cortical(cr,CParams(p.aspect,rates(cr),p.scales,p.bandonly))
+MetaArrays.MetaArray(p::CParamScales,cr::AxisArray{T,4} where T) =
+  MetaArray(CParams(p.aspect,rates(cr),p.scales,p.bandonly),cr)
 
 # inverse of cortical rates and scales
 function audiospect(cr::Cortical;norm=0.9,progressbar=true)
-  @assert(rates(cr) == rates(cr.params),
+  @assert(rates(cr) == rates(getmeta(cr)),
           "Missing rates, this is a slice of the original data."*
           " Slice inversion is currently unsupported.")
-  @assert(scales(cr) == scales(cr.params),
+  @assert(scales(cr) == scales(getmeta(cr)),
           "Missing scales, this is a slice of the original data."*
           " Slice inversion is currently unsupported.")
 
@@ -254,15 +255,14 @@ function audiospect(cr::Cortical;norm=0.9,progressbar=true)
     end
   end
 
-  t = AxisArrays.axes(AxisArray(cr),Axis{:time})
-  f = AxisArrays.axes(AxisArray(cr),Axis{:freq})
-  AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),
-                      Params(cr).aspect)
+  t = AxisArrays.axes(cr,Axis{:time})
+  f = AxisArrays.axes(cr,Axis{:freq})
+  audiospect(AxisArray(normalize!(z_cum,cr,norm),t,f), cr.aspect)
 end
 
 # inverse of scales
 function audiospect(cr::CorticalScales;norm=0.9,progressbar=true)
-  @assert(scales(cr) == scales(cr.params),
+  @assert(scales(cr) == scales(getmeta(cr)),
           "Missing scales, this is a slice of the original data."*
           " Slice inversion is currently unsupported.")
 
@@ -273,16 +273,15 @@ function audiospect(cr::CorticalScales;norm=0.9,progressbar=true)
     addfft!(z_cum,cr[:,si,:],[HS; zero(HS)]')
     next!(progress)
   end
-  t = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:time})
-  f = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:freq})
+  t = AxisArrays.axes(cr,Axis{:time})
+  f = AxisArrays.axes(cr,Axis{:freq})
 
-  AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),
-                      cr.params.aspect)
+  AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f), cr.aspect)
 end
 
 # inverse of rates
 function audiospect(cr::CorticalRates;norm=0.9,progressbar=true)
-  @assert(rates(cr) == rates(cr.params),
+  @assert(rates(cr) == rates(getmeta(cr)),
           "Missing rates, this is a slice of the original data."*
           " Slice inversion is currently unsupported.")
   z_cum = FFTCum(cr)
@@ -292,10 +291,10 @@ function audiospect(cr::CorticalRates;norm=0.9,progressbar=true)
     addfft!(z_cum,cr[:,ri,:],HR)
     next!(progress)
   end
-  t = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:time})
-  f = AxisArrays.AxisArrays.axes(AxisArray(cr),Axis{:freq})
+  t = AxisArrays.axes(cr,Axis{:time})
+  f = AxisArrays.axes(cr,Axis{:freq})
 
-  AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),cr.params.aspect)
+  AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),cr.aspect)
 end
 
 ################################################################################
@@ -315,8 +314,8 @@ struct FIRFiltering{T,N}
 end
 
 function FIRFiltering(y,axis)
-  dims = map(AxisArrays.AxisArrays.axes(y)) do ax
-    if AxisArrays.AxisArrays.axes(y,axis) == ax
+  dims = map(AxisArrays.axes(y)) do ax
+    if AxisArrays.axes(y,axis) == ax
       2nextprod([2,3,5],length(ax))
     else
       length(ax)
@@ -333,7 +332,7 @@ Base.ndims(x::FIRFiltering) = ndims(x.Y)
 
 function initcr(y,params::CParamRates)
   r = Axis{:rate}(params.rates)
-  ax = AxisArrays.AxisArrays.axes(y)
+  ax = AxisArrays.axes(y)
   newax = ax[1],r,ax[2:end]...
 
   AxisArray(zeros(complex(eltype(y)),length.(newax)...),newax...)
@@ -341,7 +340,7 @@ end
 
 function initcr(y,params::CParamScales)
   s = Axis{:scale}(params.scales)
-  ax = AxisArrays.AxisArrays.axes(y)
+  ax = AxisArrays.axes(y)
   newax = ax[1:end-1]...,s,ax[end]
 
   AxisArray(zeros(complex(eltype(y)),length.(newax)...),newax...)
@@ -364,7 +363,7 @@ end
 
 function FFTCum(cr::Cortical)
   dims = find_fft_dims((size(cr,1),size(cr,ndims(cr))))
-  mult = 1 .+ (Params(cr).rates != nothing,Params(cr).scales != nothing)
+  mult = 1 .+ (cr.rates != nothing,cr.scales != nothing)
   z = zeros(eltype(cr),dims .* mult)
 
   FFTCum(z,copy(z),zeros(real(eltype(z)),size(z)...),plan_fft(z))
@@ -422,7 +421,7 @@ function askind(H,len,maxi,kind,nonorm)
   end
 end
 
-function scale_filters(Y,x,params=Params(x))
+function scale_filters(Y,x,params=x)
   N_f = size(Y,ndims(Y)) >> 1
   smin,smax = extrema(scales(x))
   map(scales(x)) do scale
@@ -440,7 +439,7 @@ function scale_filter(scale,len,ts,kind)
   askind(H,len,argmax(H),kind,false)
 end
 
-function rate_filters(Y,x,params=Params(x);use_conj=false)
+function rate_filters(Y,x,params=x;use_conj=false)
   N_t = size(Y,1) >> 1
   rmin,rmax = extrema(abs.(rates(x)))
 
