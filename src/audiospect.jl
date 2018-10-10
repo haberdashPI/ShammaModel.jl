@@ -64,17 +64,18 @@ function freqs(as::ASParamLike)
   result = (440.0Hz * 2.0.^(((1:num_base_freqs(as)).-31)./24 .+ as.octave_shift))
   result[1:as.freq_step:end]
 end
-freqs(as::AbstractArray) = axisvalues(AxisArrays.axes(as,Axis{:freq}))[1]
+freqs(as::MetaUnion{AxisArray}) = 
+  axisvalues(AxisArrays.axes(as,Axis{:freq}))[1]
 
 ntimes(x) = length(times(x))
-times(as::AbstractArray) = axisvalues(AxisArrays.axes(as,Axis{:time}))[1]
+times(as::MetaUnion{AxisArray}) = axisvalues(AxisArrays.axes(as,Axis{:time}))[1]
 times(p::ASParamLike,x::AbstractArray) = (Base.axes(x,1) .- 1) .* Δt(p)
 
 struct HasTimes end
 struct HasNoTimes end
 hastimes(x::AuditorySpectrogram) = HasTimes()
-hastimes(x::AxisArray) = :time ∈ axisnames(x) ? HasTimes() : HasNoTimes()
-timedim(x::AbstractArray) = axisdim(x,Axis{:time})
+hastimes(x::MetaUnion{AxisArray}) = :time ∈ axisnames(x) ? HasTimes() : HasNoTimes()
+timedim(x::MetaUnion{AxisArray}) = axisdim(x,Axis{:time})
 
 duration(x::AbstractArray) = last(times(x)) - first(times(x))
 duration(x::SampleBuf) = nframes(x) / samplerate(x)

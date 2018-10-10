@@ -20,7 +20,6 @@ struct CochFilters
 end
 const cochlear = Ref{CochFilters}()
 
-include("modelresult.jl")
 include("audiospect.jl")
 include("cortical.jl")
 
