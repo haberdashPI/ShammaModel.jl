@@ -40,5 +40,7 @@ X_hat = audiospect(cr)
   @test rates(cr) == default_rates
   @test scales(cr) == default_scales
   @test freq_ticks(cr) == freq_ticks(X)
+  @test Array(cortical(cortical(X,scales=default_scales),rates=default_rates)) ≈
+    Array(cr)
 end
 

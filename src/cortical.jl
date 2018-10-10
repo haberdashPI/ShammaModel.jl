@@ -50,7 +50,7 @@ asscales(x::CParams) = CParams(x.aspect,nothing,x.scales,x.bandonly)
 
 cortical_progress(n) = Progress(desc="Cortical Model: ",n)
 
-frame_length(x::Cortical) = frame_length(x.params.aspect)
+frame_length(x::Cortical) = frame_length(x.aspect)
 
 freqs(x::CParamLike) = freqs(x.aspect)
 
@@ -81,15 +81,15 @@ CParams(x::AuditorySpectrogram;rates=nothing,scales=nothing,
 function CParams(x::CorticalRates;rates=nothing,scales=nothing,
                  bandonly=false,params...)
   @assert rates == nothing "Already analyzed rates."
-  @assert bandonly == x.params.bandonly "`bandonly` value does not match."
-  CParams(x.params.aspect,rates,scales,bandonly)
+  @assert bandonly == x.bandonly "`bandonly` value does not match."
+  CParams(x.aspect,rates,scales,bandonly)
 end
 
 function CParams(x::CorticalScales;rates=nothing,scales=nothing,
                  bandonly=false,params...)
   @assert scales == nothing "Already analyzed scales."
-  @assert bandonly == x.params.bandonly "`bandonly` value does not match."
-  CParams(x.params.aspect,rates,scales,bandonly)
+  @assert bandonly == x.bandonly "`bandonly` value does not match."
+  CParams(x.aspect,rates,scales,bandonly)
 end
 
 const spect_rate = 24
