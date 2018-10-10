@@ -28,8 +28,8 @@ const CParamRates{R} = CParams{R,Nothing}
 const CParamAll = CParams{R,S} where {R <: AbstractArray,S <: AbstractArray}
 
 const Cortical{R,S} = MetaArray{<:AxisArray, <: CParams{R,S}}
-const CorticalScales = Cortical{<:Any,Nothing}
-const CorticalRates = Cortical{Nothing}
+const CorticalScales = Cortical{Nothing}
+const CorticalRates = Cortical{<:Any,Nothing}
 const CParamLike = Union{CParams,Cortical}
 
 resultname(x::Cortical) = "Cortical Rates × Scales"
