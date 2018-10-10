@@ -18,6 +18,8 @@ as_x_hat = audiospect(x_hat)
   @test sum((as_x_hat .* (mean(X) / mean(as_x_hat)) .- X).^2) ./
     sum(X.^2) <= err
 
+  @test eltype(audiospect(collect(1:10))) == float(Int)
+
   @test length(freqs(X)) > 0
   @test minimum(freqs(X)) > 0Hz
   @test maximum(freqs(X)) > 3kHz

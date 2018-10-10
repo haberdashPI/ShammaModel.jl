@@ -161,7 +161,7 @@ function audiospect(x::SampleBuf,params::ASParams,progressbar=true)
   frame_len  = frame_length(params)
   N = ceil(Int,length(x) / frame_len) # of frames
   x_ = if length(x) < N*frame_len
-    [x; fill(zero(T),N*frame_len - length(x))]
+    [x; fill(zero(eltype(x)),N*frame_len - length(x))]
   else
     x
   end
@@ -171,7 +171,7 @@ end
 function audiospect_helper(x::AbstractVector{T}, N, params::ASParamLike,
                            progressbar=true, internal_call=false) where {T}
   M = length(params.cochlear.filters)
-  Y = fill(zero(T),N, M-1)
+  Y = fill(zero(float(T)),N, M-1)
   Y_haircell = !internal_call ? nothing : fill(zero(T),length(x),M-1)
 
   last_haircell = x |>
