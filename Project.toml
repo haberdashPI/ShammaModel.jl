@@ -1,7 +1,7 @@
 name = "ShammaModel"
 uuid = "80f90042-ac61-11e8-0ace-f1a8d5e03555"
 authors = ["David Little <david.frank.little@gmail.com>"]
-version = "0.2.3"
+version = "0.2.4"
 
 [deps]
 AxisArrays = "39de3d68-74b9-583c-8d2d-e117c070f3a9"
@@ -27,7 +27,7 @@ DataFrames = "0.14.0"
 FFTW = "0.2.4"
 FileIO = "1.0.1"
 JLD2 = "0.1.2"
-MetaArrays = "0.1.1"
+MetaArrays = "0.1.2"
 ProgressMeter = "0.6.0"
 Requires = "0.5.2"
 Unitful = "0.11.0"
