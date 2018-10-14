@@ -52,7 +52,7 @@ cortical_progress(n) = Progress(desc="Cortical Model: ",n)
 
 frame_length(x::Cortical) = frame_length(x.aspect)
 
-freqs(x::CParamLike) = freqs(x.aspect)
+freqs(x::CParams) = freqs(x.aspect)
 
 rates(x::CParams) = x.rates
 rates(x::Union{AxisArray,Cortical}) =
@@ -276,7 +276,7 @@ function audiospect(cr::CorticalScales;norm=0.9,progressbar=true)
   t = AxisArrays.axes(cr,Axis{:time})
   f = AxisArrays.axes(cr,Axis{:freq})
 
-  AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f), cr.aspect)
+  MetaArray(cr.aspect,AxisArray(normalize!(z_cum,cr,norm),t,f))
 end
 
 # inverse of rates
@@ -294,7 +294,7 @@ function audiospect(cr::CorticalRates;norm=0.9,progressbar=true)
   t = AxisArrays.axes(cr,Axis{:time})
   f = AxisArrays.axes(cr,Axis{:freq})
 
-  AuditorySpectrogram(AxisArray(normalize!(z_cum,cr,norm),t,f),cr.aspect)
+  MetaArray(cr.aspect,AxisArray(normalize!(z_cum,cr,norm),t,f))
 end
 
 ################################################################################
