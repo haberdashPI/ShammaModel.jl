@@ -12,6 +12,7 @@ X = audiospect(x)
 err = 0.05
 x_hat = SampleBuf(X,target_error=err,max_iterations=1000)
 as_x_hat = audiospect(x_hat)
+
 @testset "Spectrogram" begin
   @test_throws AssertionError audiospect(SampleBuf(collect(1:10),4000))
   @test mean(X[:,0.9kHz ..1.1kHz]) > mean(X[:,1.9kHz .. 2.1kHz])
@@ -24,6 +25,7 @@ as_x_hat = audiospect(x_hat)
   @test minimum(freqs(X)) > 0Hz
   @test maximum(freqs(X)) > 3kHz
   @test nfreqs(X) == 128
+  @test nfreqs(X[:,1:20]) == 20
   @test abs(maximum(times(X)) - duration(x)*s) < 2Δt(X)
   @test Δt(X) ≈ times(X)[2] - times(X)[1]
   @test Δf(X) ≈ freqs(X)[2]/freqs(X)[1]

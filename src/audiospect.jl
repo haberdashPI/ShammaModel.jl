@@ -57,10 +57,10 @@ end
 resultname(x::AuditorySpectrogram) = "Auditory Spectrogram"
 
 num_base_freqs(as::ASParamLike) = length(as.cochlear.filters)-1
-nfreqs(as::ASParamLike) = floor(Int,(num_base_freqs(as))/as.freq_step)
+nfreqs(as::ASParams) = floor(Int,(num_base_freqs(as))/as.freq_step)
 nfreqs(x) = length(freqs(x))
 
-function freqs(as::ASParamLike)
+function freqs(as::ASParams)
   result = (440.0Hz * 2.0.^(((1:num_base_freqs(as)).-31)./24 .+ as.octave_shift))
   result[1:as.freq_step:end]
 end
