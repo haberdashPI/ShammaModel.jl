@@ -55,12 +55,12 @@ frame_length(x::Cortical) = frame_length(x.aspect)
 freqs(x::CParams) = freqs(x.aspect)
 
 rates(x::CParams) = x.rates
-rates(x::Union{AxisArray,Cortical}) =
+rates(x::MetaUnion{AxisArray}) =
   axisvalues(AxisArrays.axes(x,Axis{:rate}))[1]
 nrates(x) = length(rates(x))
 
 scales(x::CParams) = x.scales
-scales(x::Union{AxisArray,Cortical}) =
+scales(x::MetaUnion{AxisArray}) =
   axisvalues(AxisArrays.axes(x,Axis{:scale}))[1]
 nscales(x) = length(scales(x))
 
