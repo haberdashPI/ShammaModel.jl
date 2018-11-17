@@ -38,6 +38,10 @@ function __init__()
   end
 
   @require RCall="6f49c342-dc21-5d91-9882-a32aef131414" include("rplots.jl")
+  @require PlotAxes="8b6f5f00-d239-11e8-3a24-33314b00f6b0" begin
+    using .PlotAxes
+    include("plot_axes.jl")
+  end
   # @require VegaLite include("rplots.jl")
 
   merge!(Unitful.basefactors, localunits)
