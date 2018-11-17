@@ -1,7 +1,7 @@
 name = "ShammaModel"
 uuid = "80f90042-ac61-11e8-0ace-f1a8d5e03555"
 authors = ["David Little <david.frank.little@gmail.com>"]
-version = "0.2.9"
+version = "0.2.10"
 
 [deps]
 AxisArrays = "39de3d68-74b9-583c-8d2d-e117c070f3a9"
