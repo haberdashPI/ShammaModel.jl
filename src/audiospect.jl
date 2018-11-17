@@ -139,10 +139,17 @@ function audiospect(x::AbstractArray,params::ASParams,progressbar=true)
 end
 
 function audiospect(x::AxisArray{T,2} where T,params::ASParams,progressbar=true)
-  @assert(nfreqs(x) == nfreqs(params),
-          "Frequency channels of array and parameters do not match")
-
-  MetaArray(params,x)
+  if nfreqs(x) != nfreqs(params)
+    freqs_p = freqs(params)
+    if all(fr -> any(x -> fr ≈ x,freqs_p),freqs(x))
+      @warn("Some of the frequency channels are missing.")
+      MetaArray(params,x)
+    else
+      error("Frequency channels of array and parameters do not match")
+    end
+  else
+    MetaArray(params,x)
+  end
 end
 
 function audiospect(x::AuditorySpectrogram,params::ASParams,progressbar=true)
