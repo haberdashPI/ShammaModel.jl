@@ -144,6 +144,9 @@ function audiospect(x::AxisArray{T,2} where T,params::ASParams,progressbar=true)
     if all(fr -> any(x -> isapprox(ustrip(x),ustrip(fr),atol=1e-8),freqs_p),
            freqs(x))
       @warn("Some of the frequency channels are missing.")
+      if params.Δt != Δt(x)
+        error("Parameters do not match Δt of input.")
+      end
       MetaArray(params,x)
     else
       missing_freq = findfirst(freqs(x)) do fr
