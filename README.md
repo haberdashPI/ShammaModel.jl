@@ -10,15 +10,13 @@ analysis of complex sounds. The Journal of the Acoustical Society of America,
 You can find the original MATLAB implementation of these models
 [here](https://isr.umd.edu/Labs/NSL/Software.htm).
 
-# TODO
+## Status
+
+These functions are quite stable; I'm using them extensively in another project.
+I have not put much work into documenting the interface yet, but it is relatively
+straighforward to use. Take a look at `test/runtests.jl` for some examples.
+
+## TODO
 
 - Document function interfaces
-- Improve plotting (don't require R)
-- And a few example uses
-- Improve and generify the `ShammaModel.Result` type and make it its own
-  package for handling arrays with metadata.
-
-# Status
-
-These functions are quite stable; I'm using them extensively in other projects.
-They have not been cleaned up to make them accessible in any way yet.
+- And a few example uses, and usage with `PlotAxes` for visualization.
