@@ -4,6 +4,10 @@ using FFTW
 export rates, scales, nrates, nscales, default_rates, default_scales,
   cortical, cycoct, co
 
+# re-express the spectral and cortical dimensions to have meta data specific to
+# an axis and then make it possible to add an axis to an existing array (maybe
+# have a flag to allow multiple axes of the same type)
+
 @dimension Sc "Sc" Scale
 @refunit cycoct "cyc/oct" CyclesPerOct Sc false
 
