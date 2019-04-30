@@ -21,55 +21,40 @@ export freqs, times, nfreqs, ntimes, delta_t, delta_f, Δt, Δf, frame_length,
 # auditory spectrogram data type and its parameters
 const fixed_fs = 8000
 
-struct ASParams{T}
-  Δt::typeof(1.0s)
-  decay_tc::Float64
+struct TimeAxis
+  Δ::typeof(1.0s)
+  decay::Float64
+  fs::typeof(1.0Hz)
+end
+
+struct FreqAxis{T}
   nonlinear::Float64
   octave_shift::Float64
-  freq_step::Int
-  fs::typeof(1.0Hz)
+  step::Int
   cochlear::T
 end
 
 const WithAxes{Ax} = AxisArray{<:Any,<:Any,<:Any,Ax}
+const ASParams = NamedTuple{(:time,:freq),Tuple{TimeAxis,<:FreqAxis}}
 const AuditorySpectrogram = 
-  MetaArray{<:WithAxes{<:Tuple{Axis{:time},Axis{:freq}}}, <:ASParams}
-const ASParamLike = Union{ASParams,AuditorySpectrogram}
-
-function describe_axes(io::IO,x)
-  for ax in AxisArrays.axes(x)
-    println(io,string(AxisArrays.axisname(ax))," ",
-            string(round(ustrip(ax.val[1]),digits=2)),
-            " - ",string(round(ustrip(ax.val[end]),digits=2)),
-            string(unit(ax.val[1])))
-  end
-end
-
-function Base.show(io::IO,::MIME"text/plain",x::AuditorySpectrogram)
-  if !get(io, :compact, false)
-    println(io,"Auditory Spectrogram")
-    describe_axes(io,x)
-  else
-    println(io,string(duration(x))," AuditorySpectrogram")
-  end
-end
+  MetaArray{<:WithAxes{<:Tuple{Axis{:time},Axis{:freq}}}, ASParams}
 
 resultname(x::AuditorySpectrogram) = "Auditory Spectrogram"
 
-num_base_freqs(as::ASParamLike) = length(as.cochlear.filters)-1
-nfreqs(as::ASParams) = floor(Int,(num_base_freqs(as))/as.freq_step)
+num_base_freqs(x::MetaAxisArray) = length(x.freq.cochlear.filters)-1
+nfreqs(x::MetaAxisArray) = floor(Int,(num_base_freqs(x))/x.freq.step)
 nfreqs(x) = length(freqs(x))
 
-function freqs(as::ASParams)
-  result = (440.0Hz * 2.0.^(((1:num_base_freqs(as)).-31)./24 .+ as.octave_shift))
-  result[1:as.freq_step:end]
+function freqs(x::AxisMeta)
+  result = (440.0Hz * 2.0.^(((1:num_base_freqs(x)).-31)./24 .+ 
+    x.freq.octave_shift))
+  result[1:x.freq.step:end]
 end
-freqs(as::MetaUnion{AxisArray}) = 
-  axisvalues(AxisArrays.axes(as,Axis{:freq}))[1]
+freqs(as::MetaUnion{AxisArray}) = axisvalues(AxisArrays.axes(as,Axis{:freq}))[1]
 
 ntimes(x) = length(times(x))
 times(as::MetaUnion{AxisArray}) = axisvalues(AxisArrays.axes(as,Axis{:time}))[1]
-times(p::ASParamLike,x::AbstractArray) = (Base.axes(x,1) .- 1) .* Δt(p)
+times(p::AxisMeta,x::AbstractArray) = (Base.axes(x,1) .- 1) .* Δt(p)
 
 struct HasTimes end
 struct HasNoTimes end
@@ -83,11 +68,14 @@ duration(x::SampleBuf) = nframes(x) / samplerate(x)
 delta_t(x) = Δt(x)
 delta_f(x) = Δf(x)
 
-frame_length(params::ASParamLike) = floor(Int,Δt(params) * params.fs)
-Δt(params::ASParamLike) = params.Δt
-Δf(params::ASParamLike) = 2^(1/24)
-usamplerate(params::ASParamLike) = uconvert(Hz,params.fs)
-SampledSignals.samplerate(params::ASParamLike) = ustrip(uconvert(Hz,params.fs))
+frame_length(params::AxisMeta) = floor(Int,Δt(params) * params.time.fs)
+Δt(params::MetaAxisLike) = params.time.Δ
+function Δf(params::MetaAxisLike) 
+  @assert !isempty(params.freq.cochlear) 
+  2^(1/24)
+end
+usamplerate(params::MetaAxisLike) = uconvert(Hz,params.time.fs)
+SampledSignals.samplerate(params::MetaAxisLike) = ustrip(uconvert(Hz,params.time.fs))
 
 Δt(x) = (ts = times(x); ts[2] - ts[1])
 usamplerate(x::SampleBuf) = samplerate(x)*Hz
@@ -100,16 +88,21 @@ function ASParams(x;fs=default_sr(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
                   octave_shift=-1)
   @assert fs == fixed_fs*Hz "The only sample rate supported is $(fixed_fs)Hz"
 
-  p = ASParams(uconvert(s,float(Δt)),Float64(decay_tc),Float64(nonlinear),
-               Float64(octave_shift),Int(freq_step),uconvert(Hz,float(fs)),
-               cochlear[])
+  time = TimeAxis(
+    uconvert(s,float(Δt)),Float64(decay_tc),uconvert(Hz,float(fs))
+  )
+  freq = FreqAxis(
+    Float64(nonlinear),Float64(octave_shift),Int(freq_step), 
+    uconvert(Hz,float(fs)), cochlear[]
+  )
 
-  recommended_length = 2^(4+p.octave_shift)
+  recommended_length = 2^(4+freq.octave_shift)
   if frame_length(p) < recommended_length
     warn("It's recommended that you have a frame length of at least,"*
          " $recommended_length samples, but you have $(frame_length(p)).")
   end
-  p
+  
+  AxisMeta(time = time,freq = freq)
 end
 
 ########################################
@@ -185,14 +178,14 @@ function audiospect(x::SampleBuf,params::ASParams,progressbar=true)
   audiospect_helper(x_,N,params,progressbar)
 end
 
-function audiospect_helper(x::AbstractVector{T}, N, params::ASParamLike,
+function audiospect_helper(x::AbstractVector{T}, N, params::MetaAxisLike,
                            progressbar=true, internal_call=false) where {T}
-  M = length(params.cochlear.filters)
+  M = length(params.freq.cochlear.filters)
   Y = fill(zero(float(T)),N, M-1)
   Y_haircell = !internal_call ? nothing : fill(zero(T),length(x),M-1)
 
   last_haircell = x |>
-    params.cochlear.filters[M] |>
+    params.freq.cochlear.filters[M] |>
     ion_channels(params) |>
     haircell_membrane(params)
 
@@ -200,7 +193,7 @@ function audiospect_helper(x::AbstractVector{T}, N, params::ASParamLike,
   for ch = (M-1):-1:1
     # initial haircell transduction
     y,last_haircell = x |> 
-      params.cochlear.filters[ch] |>
+      params.freq.cochlear.filters[ch] |>
       ion_channels(params) |>
       haircell_membrane(params) |>
       lateral_inhibition(last_haircell)
@@ -219,8 +212,7 @@ function audiospect_helper(x::AbstractVector{T}, N, params::ASParamLike,
     f = Axis{:freq}(freqs(params))
     t = Axis{:time}(times(params,Y))
 
-    # MetaData(params,AxisArray...)
-    MetaArray(params,AxisArray(Y[:,1:params.freq_step:end],t,f))
+    MetaAxisArray(params,AxisArray(Y[:,1:params.freq_step:end],t,f))
   end
 end
 
@@ -231,7 +223,7 @@ function SampledSignals.SampleBuf(y_in::AuditorySpectrogram;
                                   target_error=0.05,progressbar=true)
   @assert(max_iterations < typemax(Int) || target_error < Inf,
           "No stopping criterion specified (max_iterations or target_error).")
-  M = length(y_in.cochlear.filters)
+  M = length(y_in.freq.cochlear.filters)
 
   # expand y to include all frequencies
   y = zeros(eltype(y_in),size(y_in,1),M-1)
@@ -259,7 +251,7 @@ function SampledSignals.SampleBuf(y_in::AuditorySpectrogram;
 
   for iteration in 1:max_iterations
     if min_err < target_error; break end
-    y_in.nonlinear == 0 && standardize!(x)
+    y_in.freq.nonlinear == 0 && standardize!(x)
 
     ŷ,ŷ_haircell = audiospect_helper(x,N,y_in,false,true)
     x = match_x(y_in,x,y,ŷ,ŷ_haircell)
@@ -317,14 +309,14 @@ end
 ################################################################################
 # private helper functions
 
-function ion_channels(params::ASParamLike)
-  if params.nonlinear > 0
-    x -> 1.0 ./ (1.0 .+ exp.(.-x./params.nonlinear))
-  elseif params.nonlinear == 0
+function ion_channels(params::MetaAxisLike)
+  if params.freq.nonlinear > 0
+    x -> 1.0 ./ (1.0 .+ exp.(.-x./params.freq.nonlinear))
+  elseif params.freq.nonlinear == 0
     x -> Float64.(x .> 0.0)
-  elseif params.nonlinear == -1
+  elseif params.freq.nonlinear == -1
     x -> max.(x,0.0)
-  elseif params.nonlinear == -2
+  elseif params.freq.nonlinear == -2
     identity
     # TODO: implement halfregu
   else
@@ -333,8 +325,8 @@ function ion_channels(params::ASParamLike)
 end
 
 function haircell_membrane(params)
-  if params.nonlinear  != -2
-    β = exp(-1/((1//2)*2^(4+params.octave_shift)))
+  if params.freq.nonlinear  != -2
+    β = exp(-1/((1//2)*2^(4+params.freq.octave_shift)))
     y -> filt([1.0],[1.0; -β],y)
   else
     identity
@@ -343,10 +335,10 @@ end
 
 rectify(x) = max.(x,0)
 
-function temporal_integration(params::ASParamLike,N)
+function temporal_integration(params::MetaAxisLike,N)
   frame_len = frame_length(params)
-  if !iszero(params.decay_tc)
-    α = exp(-1/(params.decay_tc*2^(4+params.octave_shift)))
+  if !iszero(params.time.decay)
+    α = exp(-1/(params.time.decay*2^(4+params.freq.octave_shift)))
     function(x)
       y = filt([1.0],[1.0; -α],x)
       @views y[frame_len*(1:N)]
@@ -363,19 +355,19 @@ function lateral_inhibition(last_haircell)
   end
 end
 
-function inv_guess(params::ASParamLike,y::AbstractMatrix)
+function inv_guess(params::MetaAxisLike,y::AbstractMatrix)
   # the initial guess only uses the first 48 channels
   f = ustrip.(uconvert.(Hz,freqs(params)))[1:48]
   steps = 1:frame_length(params)*size(y,1)
   indices = ceil.(Int,steps / frame_length(params))
-  t = steps ./ ustrip(uconvert(Hz,params.fs))
+  t = steps ./ ustrip(uconvert(Hz,params.time.fs))
 
   x = dropdims(standardize!(sum(cos.(2π.*f'.*t) .* view(y,indices,1:48),dims=2)),
                dims=2)
 end
 
-function match_x(params::ASParamLike,x,y,ŷ,ŷ_haircell)
-  M = length(params.cochlear.filters)
+function match_x(params::MetaAxisLike,x,y,ŷ,ŷ_haircell)
+  M = length(params.freq.cochlear.filters)
   steps = 1:frame_length(params)*size(y,1)
   indices = ceil.(Int,steps / frame_length(params))
 
@@ -384,9 +376,9 @@ function match_x(params::ASParamLike,x,y,ŷ,ŷ_haircell)
   end
 
   x .= 0
-  ch_norm = params.cochlear.norm
+  ch_norm = params.freq.cochlear.norm
   for ch in 1:M-1
-    if params.nonlinear == -2
+    if params.freq.nonlinear == -2
       y1 = ŷ_haircell[:,ch].*view(ratios,indices,ch)
     else
       y1 = ŷ_haircell[:,ch]
@@ -397,7 +389,7 @@ function match_x(params::ASParamLike,x,y,ŷ,ŷ_haircell)
       y1[negi] .*= maximum(y1[posi]) / -minimum(y1[negi])
     end
 
-    x .+= reverse(params.cochlear.filters[ch](reverse(y1))) ./ ch_norm
+    x .+= reverse(params.freq.cochlear.filters[ch](reverse(y1))) ./ ch_norm
   end
 
   x

@@ -11,213 +11,43 @@ export rates, scales, nrates, nscales, default_rates, default_scales,
 @dimension Sc "Sc" Scale
 @refunit cycoct "cyc/oct" CyclesPerOct Sc false
 
+struct ScaleAxis
+  first::typeof(1cycoct)
+  last::typeof(1cycoct)
+  bandonly::Bool
+end
+
+struct RateAxis
+  first::typeof(1Hz)
+  last::typeof(1Hz)
+  bandonly::Bool
+end
+
+cortical_progress(n) = Progress(desc="Cortical Model: ",n)
+
+rates(x::MetaUnion{AxisArray}) =
+  axisvalues(AxisArrays.axes(x,Axis{:rate}))[1]
+nrates(x) = length(rates(x))
+
+scales(x::MetaUnion{AxisArray}) =
+  axisvalues(AxisArrays.axes(x,Axis{:scale}))[1]
+nscales(x) = length(scales(x))
+
+const default_rates = sort([-2 .^ (1:0.5:5); 2 .^ (1:0.5:5)]).*Hz
+const default_scales = (2 .^ (-2:0.5:3)).*cycoct
+const spect_rate = 24
+
 # cortical responses of rates and scales simultaneously
 asHz(x) = x*Hz
 asHz(x::Quantity) = uconvert(Hz,x)
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
-asHz(::Type{<:AbstractArray{T,N}}) where {T,N} = Array{typeof(zero(T)*cycoct),N}
-asHz(::Type{T}) where T <: Array{Q} where Q <: Quantity = T
-asHz(::Type{Nothing}) = nothing
-ascycoct(::Type{<:AbstractArray{T,N}}) where {T,N} = Array{typeof(zero(T)*cycoct),N}
-ascycoct(::Type{T}) where T <: Array{Q} where Q <: Quantity = T
-ascycoct(::Type{Nothing}) = nothing
-
-struct CParams{R,S} 
-  aspect::ASParams
-  rates::R
-  scales::S
-  bandonly::Bool
-
-  function CParams(aspect::ASParams,rates::R,scales::S,
-                   bandonly::Bool) where {R,S}
-    if rates == scales == nothing
-      error("You must specify the rates and/or scales.")
-    end
-    new{R,S}(aspect,
-             (rates == nothing) ? nothing : sort(rates),
-             (scales == nothing) ? nothing : sort(scales),bandonly)
-  end
-end
-cparams(aspect,rates,scales,bandonly) = 
-  CParams(aspect,asHz.(rates),ascycoct.(scales),bandonly)
-const CParamScales{S} = CParams{Nothing,S}
-const CParamRates{R} = CParams{R,Nothing}
-const CParamAll = CParams{R,S} where {R <: AbstractArray,S <: AbstractArray}
-
-const Cortical{R,S} = MetaArray{<:AxisArray, <: CParams{R,S}}
-const CorticalScales = Cortical{Nothing}
-const CorticalRates = Cortical{<:Any,Nothing}
-const CParamLike = Union{CParams,Cortical}
-
-resultname(x::Cortical) = "Cortical Rates × Scales"
-resultname(x::CorticalRates) = "Cortical Rates"
-resultname(x::CorticalScales) = "Cortical Scales"
-
-function Base.show(io::IO,::MIME"text/plain",x::Cortical)
-  if !get(io, :compact, false)
-    println(io,resultname(x))
-    describe_axes(io,x)
-  else
-    println(io,string(duration(x))," ",resultname(x))
-  end
-end
-
-asrates(x::CParams) = cparams(x.aspect,x.rates,nothing,x.bandonly)
-asscales(x::CParams) = cparams(x.aspect,nothing,x.scales,x.bandonly)
-
-cortical_progress(n) = Progress(desc="Cortical Model: ",n)
-
-frame_length(x::Cortical) = frame_length(x.aspect)
-
-freqs(x::CParams) = freqs(x.aspect)
-
-rates(x::CParams) = x.rates
-rates(x::MetaUnion{AxisArray}) =
-  axisvalues(AxisArrays.axes(x,Axis{:rate}))[1]
-nrates(x) = length(rates(x))
-
-scales(x::CParams) = x.scales
-scales(x::MetaUnion{AxisArray}) =
-  axisvalues(AxisArrays.axes(x,Axis{:scale}))[1]
-nscales(x) = length(scales(x))
-
-Δt(c::CParamLike) = Δt(c.aspect)
-Δf(c::CParamLike) = Δf(c.aspect)
-
-hastimes(c::Cortical) = HasTimes()
-
-const default_rates = sort([-2 .^ (1:0.5:5); 2 .^ (1:0.5:5)]).*Hz
-const default_scales = (2 .^ (-2:0.5:3)).*cycoct
-
-cparams(x::AbstractArray;rates=nothing,scales=nothing,
-        bandonly=false,params...) =
-  cparams(ASParams(params),rates,scales,bandonly)
-cparams(x::AuditorySpectrogram;rates=nothing,scales=nothing,
-        bandonly=false) =
-  cparams(MetaArrays.getmeta(x),rates,scales,bandonly)
-function cparams(x::CorticalRates;rates=nothing,scales=nothing,
-                 bandonly=false,params...)
-  @assert rates == nothing "Already analyzed rates."
-  @assert bandonly == x.bandonly "`bandonly` value does not match."
-  cparams(x.aspect,rates,scales,bandonly)
-end
-
-function cparams(x::CorticalScales;rates=nothing,scales=nothing,
-                 bandonly=false,params...)
-  @assert scales == nothing "Already analyzed scales."
-  @assert bandonly == x.bandonly "`bandonly` value does not match."
-  cparams(x.aspect,rates,scales,bandonly)
-end
-
-const spect_rate = 24
-# TODO: implicity convert sound into cortical representation
-
-# cortical responses of rates and scales simultaneously
-asHz(x) = x.*Hz
-asHz(::Nothing) = nothing
-ascycoct(x) = x.*cycoct
-ascycoct(::Nothing) = nothing
-function cortical(y::AbstractArray;progressbar=true,
-                  rates_Hz=nothing,rates=asHz(rates_Hz),
-                  scales_cycoct=nothing,scales=ascycoct(scales_cycoct),
-                  freq_limits_Hz=(),freq_limits=freq_limits_Hz.*Hz,
-                  params...)
-  if length(freq_limits) > 0
-    startHz,stopHz = freq_limits
-    y = y[Axis{:freq}(startHz .. stopHz)]
-  end
-
-  params = cparams(y;rates=rates,scales=scales,params...)
-  cortical(y,params,progressbar)
-end
-
-cortical(y::AbstractVector,params::CParams,progressbar=true) =
-  cortical(audiospect(y,params.aspect),params,progressbar)
-cortical(y::AbstractMatrix,params::CParams,progressbar=true) =
-  cortical(audiospect(y,params.aspect),params,progressbar)
-
-####################
-# 'identity' functions: converts various arrays that already contain the
-# computed cortical representation
-function cortical(x::AxisArray{T,4} where T,params::CParamAll,
-                  progressbar=true)
-  @assert(all(i > 0 for i in indexin(freqs(x),freqs(params))),
-          "Frequency channels of array inconsisent with parameters.")
-  @assert(all(i > 0 for i in indexin(scales(x),scales(params))),
-           "Missing scales in parameters")
-  @assert(all(i > 0 for i in indexin(rates(x),rates(params))),
-          "Missing rates in parameters")
-  MetaArray(params,x)
-end
-
-function cortical(x::AxisArray{T,3} where T,params::CParamScales,
-                  progressbar=true)
-  @assert(all(i > 0 for i in indexin(freqs(x),freqs(params))),
-          "Frequency channels of array inconsisent with parameters.")
-  @assert :rate ∉ axisnames(x) "Unexpectd rate dimension"
-  @assert(all(i > 0 for i in indexin(scales(x),scales(params))),
-           "Missing scales in parameters")
-  MetaArray(params,x)
-end
-
-
-function cortical(x::AxisArray{T,3} where T,params::CParamRates,
-                  progressbar=true)
-  @assert(all(i > 0 for i in indexin(freqs(x),freqs(params))),
-          "Frequency channels of array inconsisent with parameters.")
-  @assert(all(i > 0 for i in indexin(rates(x),rates(params))),
-          "Missing rates in parameters")
-  @assert :scale ∉ axisnames(y) "Unexpectd scale dimension"
-  MetaArray(params,x)
-end
-
-function cortical(y::AbstractArray{T,4} where T,params::CParamAll,
-                  progressbar=true)
-  f = Axis{:freq}(freqs(params.aspect))
-  r = Axis{:rate}(params.rates)
-  sc = Axis{:scale}(params.scales)
-  t = Axis{:time}(times(params.aspect,y))
-  MetaArray(params,AxisArray(y,t,r,sc,f))
-end
-
-function cortical(y::AbstractArray{T,3} where T,params::CParamRates,
-                  progressbar=true)
-  f = Axis{:freq}(freqs(params.aspect))
-  r = Axis{:rate}(params.rates)
-  t = Axis{:time}(times(params.aspect,y))
-  MetaArray(params,AxisArray(y,t,r,f))
-end
-
-function cortical(y::AbstractArray{T,3} where T,params::CParamScales,
-                  progressbar=true)
-  f = Axis{:freq}(freqs(params.aspect))
-  sc = Axis{:scale}(params.scales)
-  t = Axis{:time}(times(params.aspect,y))
-  MetaArray(params,AxisArray(y,t,sc,f))
-end
-
-####################
-# actual cortical computation
-const Auditory = Union{AuditorySpectrogram,Cortical}
-function cortical(y::Auditory, params::CParamAll, progressbar=true)
-  progress = progressbar ? cortical_progress(nrates(params)+1) : nothing
-  cs = cortical(y,asscales(params),false)
-  next!(progress)
-  cortical(cs,asrates(params),progressbar,progress)
-end
-
-# cortical responses of rates
-function cortical(y::Auditory, params::CParamRates, progressbar=true,
-                  progress=progressbar ? cortical_progress(nrates(params)) :
-                  nothing)
-
-  if :rate ∈ axisnames(y)
-    warning("Rates already analyzed in the input, ",
-            "returning this input unmodified.")
-  end
-
+function ratec(y::AbstractArray, rates; progressbar=true, bandonly=true,
+               progress=progressbar ? cortical_progress(nrates(params)) :
+                nothing,
+               force=true)
+  if any(x->occursin(r"^rate[0-9]+$",x),string.(axisnames(y))
   fir = FIRFiltering(y,Axis{:time})
 
   cr = initcr(y,params)
