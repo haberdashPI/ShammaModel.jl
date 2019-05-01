@@ -32,6 +32,10 @@ function MetaAxisArray(meta::AxisMeta,data::AxisArray)
     MetaArray(meta,data)
 end
 
+function addaxes(meta::AxisMeta;kwds...)
+    AxisMeta(merge(Base.getfield(meta,:axes),kwds.data))
+end
+
 function describe_axes(io::IO,x)
   for ax in AxisArrays.axes(x)
     println(io,string(AxisArrays.axisname(ax))," ",
