@@ -43,9 +43,9 @@ asHz(x::Quantity) = uconvert(Hz,x)
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
-function convrates(y::MetaAxisArray, rates; progressbar=true, bandonly=true,
-                    progress=progressbar ? cortical_progress(nrates(params)) :
-                    nothing, rateax=:rate)
+function ratefilt(y::MetaAxisArray, rates; progressbar=true, bandonly=true,
+                  progress=progressbar ? cortical_progress(length(rates)) :
+                  nothing, rateax=:rate)
   @assert :time in axisnames(y)
   if rateax != :rate && !occursin("rate",string(rateax))
     error("Rate axis name `rateax` must contain the word 'rate'.")
@@ -67,9 +67,9 @@ end
 
 # cortical responses of scales
 vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
-function convscales(y::MetaAxisArray, scales; progressbar=true, bandonly=true,
-                     progress=progressbar ? cortical_progress(nscales(params)) :
-                     nothing, scaleax=:scale)
+function scalefilt(y::MetaAxisArray, scales; progressbar=true, bandonly=true,
+                   progress=progressbar ? cortical_progress(length(scales)) :
+                   nothing, scaleax=:scale)
   @assert :freq in axisnames(y)
   if scaleax != :scale && !occursin("scale",string(scaleax))
     error("Scale axis name `scaleax` must contain the word 'scale'.")
@@ -205,6 +205,10 @@ end
 
 # TODO: working on generalizing FFTCum to working
 # for any number of scale and rate axes
+function withoutdim(dims,without)
+  dims[1:without-1]...,dims[without+1:end]...
+end
+
 function FFTCum(cr::MetaAxisArray,withoutax)
   dims = find_fft_dims((size(cr,1),size(cr,ndims(cr))))
   if occursin("scale",string(withoutax))
