@@ -7,6 +7,12 @@ export rates, scales, nrates, nscales, default_rates, default_scales,
 @dimension Sc "Sc" Scale
 @refunit cycoct "cyc/oct" CyclesPerOct Sc false
 
+# cortical responses of rates and scales simultaneously
+asHz(x) = x*Hz
+asHz(x::Quantity) = uconvert(Hz,x)
+ascycoct(x) = x*cycoct
+ascycoct(x::Quantity) = uconvert(cycoct,x)
+
 struct CParams{R,S} 
   aspect::ASParams
   rates::R
@@ -19,8 +25,8 @@ struct CParams{R,S}
       error("You must specify the rates and/or scales.")
     end
     new{R,S}(aspect,
-             (rates == nothing) ? nothing : sort(rates),
-             (scales == nothing) ? nothing : sort(scales),bandonly)
+             (rates == nothing) ? nothing : sort(asHz.(rates)),
+             (scales == nothing) ? nothing : sort(ascycoct.(scales)),bandonly)
   end
 end
 const CParamScales{S} = CParams{Nothing,S}
