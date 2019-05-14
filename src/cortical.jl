@@ -13,6 +13,13 @@ asHz(x::Quantity) = uconvert(Hz,x)
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
+asHz(::Type{<:AbstractArray{T,N}}) where {T,N} = Array{typeof(zero(T)*cycoct),N}
+asHz(::Type{T}) where T <: Array{Q} where Q <: Quantity = T
+asHz(::Type{Nothing}) = nothing
+ascycoct(::Type{<:AbstractArray{T,N}}) where {T,N} = Array{typeof(zero(T)*cycoct),N}
+ascycoct(::Type{T}) where T <: Array{Q} where Q <: Quantity = T
+ascycoct(::Type{Nothing}) = nothing
+
 struct CParams{R,S} 
   aspect::ASParams
   rates::R
@@ -25,10 +32,12 @@ struct CParams{R,S}
       error("You must specify the rates and/or scales.")
     end
     new{R,S}(aspect,
-             (rates == nothing) ? nothing : sort(asHz.(rates)),
-             (scales == nothing) ? nothing : sort(ascycoct.(scales)),bandonly)
+             (rates == nothing) ? nothing : sort(rates),
+             (scales == nothing) ? nothing : sort(scales),bandonly)
   end
 end
+cparams(aspect,rates,scales,bandonly) = 
+  CParams(aspect,asHz.(rates),ascycoct.(scales),bandonly)
 const CParamScales{S} = CParams{Nothing,S}
 const CParamRates{R} = CParams{R,Nothing}
 const CParamAll = CParams{R,S} where {R <: AbstractArray,S <: AbstractArray}
@@ -51,8 +60,8 @@ function Base.show(io::IO,::MIME"text/plain",x::Cortical)
   end
 end
 
-asrates(x::CParams) = CParams(x.aspect,x.rates,nothing,x.bandonly)
-asscales(x::CParams) = CParams(x.aspect,nothing,x.scales,x.bandonly)
+asrates(x::CParams) = cparams(x.aspect,x.rates,nothing,x.bandonly)
+asscales(x::CParams) = cparams(x.aspect,nothing,x.scales,x.bandonly)
 
 cortical_progress(n) = Progress(desc="Cortical Model: ",n)
 
@@ -78,24 +87,24 @@ hastimes(c::Cortical) = HasTimes()
 const default_rates = sort([-2 .^ (1:0.5:5); 2 .^ (1:0.5:5)]).*Hz
 const default_scales = (2 .^ (-2:0.5:3)).*cycoct
 
-CParams(x::AbstractArray;rates=nothing,scales=nothing,
+cparams(x::AbstractArray;rates=nothing,scales=nothing,
         bandonly=false,params...) =
-  CParams(ASParams(params),rates,scales,bandonly)
-CParams(x::AuditorySpectrogram;rates=nothing,scales=nothing,
+  cparams(ASParams(params),rates,scales,bandonly)
+cparams(x::AuditorySpectrogram;rates=nothing,scales=nothing,
         bandonly=false) =
-  CParams(MetaArrays.getmeta(x),rates,scales,bandonly)
-function CParams(x::CorticalRates;rates=nothing,scales=nothing,
+  cparams(MetaArrays.getmeta(x),rates,scales,bandonly)
+function cparams(x::CorticalRates;rates=nothing,scales=nothing,
                  bandonly=false,params...)
   @assert rates == nothing "Already analyzed rates."
   @assert bandonly == x.bandonly "`bandonly` value does not match."
-  CParams(x.aspect,rates,scales,bandonly)
+  cparams(x.aspect,rates,scales,bandonly)
 end
 
-function CParams(x::CorticalScales;rates=nothing,scales=nothing,
+function cparams(x::CorticalScales;rates=nothing,scales=nothing,
                  bandonly=false,params...)
   @assert scales == nothing "Already analyzed scales."
   @assert bandonly == x.bandonly "`bandonly` value does not match."
-  CParams(x.aspect,rates,scales,bandonly)
+  cparams(x.aspect,rates,scales,bandonly)
 end
 
 const spect_rate = 24
@@ -116,7 +125,7 @@ function cortical(y::AbstractArray;progressbar=true,
     y = y[Axis{:freq}(startHz .. stopHz)]
   end
 
-  params = CParams(y;rates=rates,scales=scales,params...)
+  params = cparams(y;rates=rates,scales=scales,params...)
   cortical(y,params,progressbar)
 end
 
@@ -216,7 +225,7 @@ function cortical(y::Auditory, params::CParamRates, progressbar=true,
   MetaArray(params,cr)
 end
 MetaArrays.MetaArray(p::CParamRates,cr::AxisArray{T,4} where T) =
-  MetaArray(CParams(p.aspect,p.rates,scales(cr),p.bandonly),cr)
+  MetaArray(cparams(p.aspect,p.rates,scales(cr),p.bandonly),cr)
 
 # cortical responses of scales
 vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
@@ -240,7 +249,7 @@ function cortical(y::Auditory,params::CParamScales,progressbar=true,
   MetaArray(params,cs)
 end
 MetaArrays.MetaArray(p::CParamScales,cr::AxisArray{T,4} where T) =
-  MetaArray(CParams(p.aspect,rates(cr),p.scales,p.bandonly),cr)
+  MetaArray(cparams(p.aspect,rates(cr),p.scales,p.bandonly),cr)
 
 # inverse of cortical rates and scales
 function audiospect(cr::Cortical;norm=0.9,progressbar=true)
