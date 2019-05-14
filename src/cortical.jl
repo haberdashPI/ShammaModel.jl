@@ -81,7 +81,7 @@ function scalefilt(y::MetaAxisArray, scales; progressbar=true, bandonly=true,
 
   fir = FIRFiltering(y,Axis{:freq})
 
-  cs = initscales(y,rates,scalex,bandonly)
+  cs = initscales(y,scales,scalex,bandonly)
   for (si,HS) in enumerate(scale_filters(fir,cs,scaleax))
     z = apply(fir,conj.(vecperm([HS; zero(HS)],ndims(y))))
     cs[Axis{scaleax}(si)] = view(z,Base.axes(y)...)
