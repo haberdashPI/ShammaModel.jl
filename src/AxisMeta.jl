@@ -36,6 +36,13 @@ function addaxes(meta::AxisMeta;kwds...)
     AxisMeta(merge(Base.getfield(meta,:axes),kwds.data))
 end
 
+function removeaxes(meta::AxisMeta,rem...)
+  axes = Base.getfield(meta,:axes)
+  fields = setdiff(fieldnames(typeof(axes)),rem)
+  vals = tuple(map(f -> axes[f],fields))
+  AxisMeta(NamedTuple{fields,typeof(vals)}(vals))
+end
+
 function describe_axes(io::IO,x)
   for ax in AxisArrays.axes(x)
     println(io,string(AxisArrays.axisname(ax))," ",

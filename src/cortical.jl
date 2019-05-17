@@ -91,9 +91,6 @@ function scalefilt(y::MetaAxisArray, scales; progressbar=true, bandonly=true,
   cs
 end
 
-# TODO: since the normalization step is somewhat inaccurate
-# we need some way generic to combine multiple steps
-
 function scaleinv(y::MetaAxisArray;norm=0.9,progressbar=true,scaleax=:scale)
   @assert scaleax in axisnames(y)
  
@@ -104,14 +101,11 @@ function scaleinv(y::MetaAxisArray;norm=0.9,progressbar=true,scaleax=:scale)
     addfft!(z_cum,y[Axis{scaleax}(si)],[HS; zero(HS)]')
     next!(progress)
   end
-  t = AxisArrays.axes(cr,Axis{:time})
-  f = AxisArrays.axes(cr,Axis{:freq})
-
-  MetaArray(cr.aspect,AxisArray(normalize!(z_cum,cr,norm),t,f))
+  MetaAxisArray(removeaxes(getmeta(cr),scaleax),normalize!(z_cum,cr,norm))
 end
 
 # inverse of rates
-function audiospect(cr::CorticalRates;norm=0.9,progressbar=true)
+function rateinv(cr::CorticalRates;norm=0.9,progressbar=true,rateax=:rate)
   @assert(rates(cr) == rates(getmeta(cr)),
           "Missing rates, this is a slice of the original data."*
           " Slice inversion is currently unsupported.")
@@ -122,10 +116,8 @@ function audiospect(cr::CorticalRates;norm=0.9,progressbar=true)
     addfft!(z_cum,cr[:,ri,:],HR)
     next!(progress)
   end
-  t = AxisArrays.axes(cr,Axis{:time})
-  f = AxisArrays.axes(cr,Axis{:freq})
 
-  MetaArray(cr.aspect,AxisArray(normalize!(z_cum,cr,norm),t,f))
+  MetaAxisArray(removeaxes(getmeta(cr),rateax),normalize!(z_cum,cr,norm))
 end
 
 ################################################################################
@@ -196,11 +188,12 @@ reshape_for(v::Array{T,3},cr::AxisArray{T,4}) where T =
 
 # keeps track of cumulative sum of FIR filters
 # in frequency-space so we can readily normalize the result.
-struct FFTCum{T,P,N}
+struct FFTCum{T,P,N,Ax}
   z::Array{Complex{T},N}
   z_cum::Array{Complex{T},N}
   h_cum::Array{T,N}
   plan::P
+  axes::Ax
 end
 
 # TODO: working on generalizing FFTCum to working
@@ -212,31 +205,43 @@ end
 function FFTCum(cr::MetaAxisArray,withoutax)
   withoutd = axisdim(withoutax)
   dims = find_fft_dims(withoutdim(cr,withoutd))
-  z = zeros(eltype(cr),dims .* (1 .+ (withoutd .== 1:ndims(cr)))
+  mult = fill(ndims(cr),1)
+  mult[1] += startswith(string(withoutax),"scale")
+  mult[end] += startswith(string(withoutax),"rate")
+  z = zeros(eltype(cr),(dims .* mult)...)
 
-  FFTCum(z,copy(z),zeros(real(eltype(z)),size(z)...),plan_fft(z))
+  newaxes = withoutdim(AxisArrays.axes(cr),withoutd)
+  FFTCum(z,copy(z),zeros(real(eltype(z)),size(z)...),plan_fft(z),newaxes)
 end
 
 Base.size(x::FFTCum,i...) = size(x.z_cum,i...)
 Base.ndims(x::FFTCum) = ndims(x.z_cum)
 
 function addfft!(x::FFTCum,cr,h)
-  x.z[1:ntimes(cr),1:nfreqs(cr)] = cr
-  Z = x.plan * x.z
-  x.h_cum .+= abs2.(h)
-  x.z_cum .+= h .* Z
+  for I in CartesianIndices(size(x.z)[2:end-1])
+    x.z[1:ntimes(cr),I,1:nfreqs(cr)] = cr[1:ntimes(cr),I,1:nfreqs(cr)]
+    Z[:,I,:] = x.plan * x.z[:,I,:]
+    x.h_cum[:,I,:] .+= abs2.(h)
+    x.z_cum[:,I,:] .+= h .* Z[:,I,:]
+  end
   x
 end
 
 function normalize!(x::FFTCum,cr,norm)
-  x.h_cum[:,1] .*= 2
-  old_sum = sum(x.h_cum[:,nfreqs(cr)])
-  x.h_cum .= norm.*x.h_cum .+ (1 .- norm).*maximum(x.h_cum)
-  x.h_cum .*= old_sum ./ sum(view(x.h_cum,:,nfreqs(cr)))
-  x.z_cum ./= x.h_cum
+  inner_dims = size(x.z)[2:end-1]
+  result = similar(real(eltype(cr)),ntimes(cr),inner_dims...,nfreqs(cr))
+  for I in CartesianIndices(size(x.z)[2:end-1])
+    x.h_cum[:,I,1] .*= 2
+    old_sum = sum(x.h_cum[:,I,nfreqs(cr)])
+    x.h_cum[:,I,:] .= norm.*x.h_cum[:,I,:] .+ (1 .- norm).*maximum(x.h_cum[:,I,:])
+    x.h_cum[:,I,:] .*= old_sum ./ sum(view(x.h_cum[:,I,:],:,nfreqs(cr)))
+    x.z_cum[:,I,:] ./= x.h_cum[:,I,:]
 
-  spectc = view((x.plan \ x.z_cum),1:ntimes(cr),1:nfreqs(cr))
-  max.(real.(2 .* spectc),0)
+    spectc = view((x.plan \ x.z_cum[:,I,:]),1:ntimes(cr),1:nfreqs(cr))
+    result[:,I,:] .= max.(real.(2 .* spectc),0)
+  end
+
+  AxisArray(result,x.axes...)
 end
 
 pad(x,lens) = pad(x,lens...)
