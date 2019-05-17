@@ -210,10 +210,9 @@ function withoutdim(dims,without)
 end
 
 function FFTCum(cr::MetaAxisArray,withoutax)
-  dims = find_fft_dims((size(cr,1),size(cr,ndims(cr))))
-  if occursin("scale",string(withoutax))
-    mult = 1 .+ (cr.rates != nothing,cr.scales != nothing)
-  z = zeros(eltype(cr),dims .* mult)
+  withoutd = axisdim(withoutax)
+  dims = find_fft_dims(withoutdim(cr,withoutd))
+  z = zeros(eltype(cr),dims .* (1 .+ (withoutd .== 1:ndims(cr)))
 
   FFTCum(z,copy(z),zeros(real(eltype(z)),size(z)...),plan_fft(z))
 end
