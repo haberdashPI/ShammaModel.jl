@@ -107,10 +107,8 @@ function scaleinv(y::MetaAxisArray;norm=0.9,progressbar=true,scaleax=:scale)
 end
 
 # inverse of rates
-function rateinv(cr::CorticalRates;norm=0.9,progressbar=true,rateax=:rate)
-  @assert(rates(cr) == rates(getmeta(cr)),
-          "Missing rates, this is a slice of the original data."*
-          " Slice inversion is currently unsupported.")
+function rateinv(cr::MetaAxisArray;norm=0.9,progressbar=true,rateax=:rate)
+  @assert rateax in axisnames(cr)
   z_cum = FFTCum(cr)
 
   progress = progressbar ? cortical_progress(nrates(cr)) : nothing

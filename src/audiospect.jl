@@ -35,9 +35,8 @@ struct FreqAxis{T}
 end
 
 const WithAxes{Ax} = AxisArray{<:Any,<:Any,<:Any,Ax}
-const ASParams = NamedTuple{(:time,:freq),Tuple{TimeAxis,<:FreqAxis}}
 const AuditorySpectrogram = 
-  MetaArray{<:WithAxes{<:Tuple{Axis{:time},Axis{:freq}}}, ASParams}
+  MetaAxisArray{<:WithAxes{<:Tuple{Axis{:time},Axis{:freq}}}}
 
 resultname(x::AuditorySpectrogram) = "Auditory Spectrogram"
 
@@ -68,7 +67,8 @@ duration(x::SampleBuf) = nframes(x) / samplerate(x)
 delta_t(x) = Δt(x)
 delta_f(x) = Δf(x)
 
-frame_length(params::AxisMeta) = floor(Int,Δt(params) * params.time.fs)
+frame_length(params::AxisMeta) = frame_length(params.time)
+frame_length(ax::TimeAxis) = floor(Int,ax.Δ * ax.fs)
 Δt(params::MetaAxisLike) = params.time.Δ
 function Δf(params::MetaAxisLike) 
   @assert !isempty(params.freq.cochlear) 
@@ -83,7 +83,7 @@ usamplerate(x::SampleBuf) = samplerate(x)*Hz
 default_sr(x) = 8000.0Hz
 default_sr(x::SampleBuf) = usamplerate(x)
 
-function ASParams(x;fs=default_sr(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
+function asparams(x;fs=default_sr(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
                   freq_step=1,Δt=delta_t,decay_tc=8,nonlinear=-2,
                   octave_shift=-1)
   @assert fs == fixed_fs*Hz "The only sample rate supported is $(fixed_fs)Hz"
@@ -91,13 +91,11 @@ function ASParams(x;fs=default_sr(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
   time = TimeAxis(
     uconvert(s,float(Δt)),Float64(decay_tc),uconvert(Hz,float(fs))
   )
-  freq = FreqAxis(
-    Float64(nonlinear),Float64(octave_shift),Int(freq_step), 
-    uconvert(Hz,float(fs)), cochlear[]
-  )
+  freq = FreqAxis(Float64(nonlinear),Float64(octave_shift),Int(freq_step), 
+    cochlear[])
 
   recommended_length = 2^(4+freq.octave_shift)
-  if frame_length(p) < recommended_length
+  if frame_length(time) < recommended_length
     warn("It's recommended that you have a frame length of at least,"*
          " $recommended_length samples, but you have $(frame_length(p)).")
   end
@@ -108,7 +106,7 @@ end
 ########################################
 # auditory spectrogram interface
 audiospect(x::AbstractArray;progressbar=true,params...) =
-  audiospect(x,ASParams(x;params...),progressbar)
+  audiospect(x,asparams(x;params...),progressbar)
 
 ####################
 # 'identity' conversions (something that's already basically a spectrogram)

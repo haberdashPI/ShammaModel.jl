@@ -1,7 +1,10 @@
+using AxisArrays
+using MetaArrays
 
 struct AxisMeta{Axs}
     axes::Axs # map from :axis -> metadata
 end
+AxisMeta(;kwds...) = AxisMeta(kwds.data)
 Base.getproperty(x::AxisMeta,field::Symbol) = getproperty(x.axes,field)
 
 function validate(meta::AxisMeta,data::AxisArray)
