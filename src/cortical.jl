@@ -48,11 +48,12 @@ function ratefilt(y::MetaAxisArray, rates; progressbar=true, bandonly=true,
                   nothing, rateax=:rate)
   @assert :time in axisnames(y)
   if rateax != :rate && !occursin("rate",string(rateax))
-    error("Rate axis name `rateax` must contain the word 'rate'.")
+    error("Rate axis name `$rateax` must contain the word 'rate'.")
   end
   if rateax in axisnames(y)
-    error("Input already has an axis named `$rateax`. Set `rateax` to a",
-          " different value to create a second rate axis.")
+    error("Input already has an axis named `$rateax`. If you intended to add ",
+          "a second rate dimension, set keyword argument `rateax` to a ",
+          "different value to create a second rate axis.")
   end
 
   fir = FIRFiltering(y,Axis{:time})
@@ -72,11 +73,12 @@ function scalefilt(y::MetaAxisArray, scales; progressbar=true, bandonly=true,
                    nothing, scaleax=:scale)
   @assert :freq in axisnames(y)
   if scaleax != :scale && !occursin("scale",string(scaleax))
-    error("Scale axis name `scaleax` must contain the word 'scale'.")
+    error("Scale axis name `$scaleax` must contain the word 'scale'.")
   end
   if scaleax in axisnames(y)
-    error("Input already has an axis named `$scaleax`. Set `scaleax` to a",
-          " different value to create a second scale axis.")
+    error("Input already has an axis named `$scaleax`. If you intended to add ",
+          "a second scale dimension, set keyword argument `scaleax` to a ",
+          "different value to create a second scale axis.")
   end
 
   fir = FIRFiltering(y,Axis{:freq})
