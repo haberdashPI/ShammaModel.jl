@@ -5,6 +5,7 @@ using JLD2
 using FileIO
 using SampledSignals
 using Statistics
+using Debugger
 
 import DSP.Filters.freqs
 
@@ -40,8 +41,8 @@ const AuditorySpectrogram =
 
 resultname(x::AuditorySpectrogram) = "Auditory Spectrogram"
 
-num_base_freqs(x::MetaAxisArray) = length(x.freq.cochlear.filters)-1
-nfreqs(x::MetaAxisArray) = floor(Int,(num_base_freqs(x))/x.freq.step)
+num_base_freqs(x::AxisMeta) = length(x.freq.cochlear.filters)-1
+num_base_freqs(x::MetaAxisArray) = num_base_freqs(getmeta(x))
 nfreqs(x) = length(freqs(x))
 
 function freqs(x::AxisMeta)
@@ -110,7 +111,7 @@ audiospect(x::AbstractArray;progressbar=true,params...) =
 
 ####################
 # 'identity' conversions (something that's already basically a spectrogram)
-function audiospect(x::AbstractArray,params::ASParams,progressbar=true)
+function audiospect(x::AbstractArray,params::AxisMeta,progressbar=true)
   if ndims(x) <= 2 && size(x,2) <= 2
     # the array probably represents a sound
     @warn "Assuming sample rate of input is $(fixed_fs)."
@@ -129,7 +130,7 @@ function audiospect(x::AbstractArray,params::ASParams,progressbar=true)
   end
 end
 
-function audiospect(x::AxisArray{T,2} where T,params::ASParams,progressbar=true)
+function audiospect(x::AxisArray{T,2} where T,params::AxisMeta,progressbar=true)
   if nfreqs(x) != nfreqs(params)
     freqs_p = freqs(params)
     if all(fr -> any(x -> isapprox(ustrip(x),ustrip(fr),atol=1e-8),freqs_p),
@@ -153,7 +154,7 @@ function audiospect(x::AxisArray{T,2} where T,params::ASParams,progressbar=true)
   end
 end
 
-function audiospect(x::AuditorySpectrogram,params::ASParams,progressbar=true)
+function audiospect(x::AuditorySpectrogram,params::AxisMeta,progressbar=true)
   @assert(MetaArrays.getmeta(x) == params,
           "Parameters of spectrogram and input parameters do not match")
   x
@@ -161,7 +162,7 @@ end
 
 ####################
 # the actual computation of a spectrogram
-function audiospect(x::SampleBuf,params::ASParams,progressbar=true)
+function audiospect(x::SampleBuf,params::AxisMeta,progressbar=true)
   if usamplerate(x) != fixed_fs*Hz
     error("Unsupported sample rate. Must be $(fixed_fs).")
   end
