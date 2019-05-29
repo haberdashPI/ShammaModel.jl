@@ -74,6 +74,27 @@ function DSP.filt(rates::TimeRateFilter,y::MetaAxisArray; progressbar=true,
   cr
 end
 
+# inverse of rates
+struct TimeRateFilterInv
+  rates::TimeRateFilter
+  norm::Float64
+end
+Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilter(rates,norm)
+
+function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
+  @assert rateinv.rates.axis in axisnames(cr)
+  z_cum = FFTCum(cr)
+
+  progress = progressbar ? cortical_progress(nrates(cr)) : nothing
+  for (ri,HR) in enumerate(rate_filters(z_cum,cr,use_conj=true))
+    addfft!(z_cum,cr[:,ri,:],HR)
+    next!(progress)
+  end
+
+  MetaAxisArray(removeaxes(getmeta(cr),rateinv.rates.axis),
+    normalize!(z_cum,cr,rateinv.norm))
+end
+
 # cortical responses of scales
 vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
 struct FreqScaleFilter
@@ -130,28 +151,6 @@ function DSP.filt(scaleinv::FreqScaleFilterInv,cr::MetaAxisArray,progressbar=tru
   end
   MetaAxisArray(removeaxes(getmeta(cr),scaleinv.scale.axis),
     normalize!(z_cum,cr,scaleinv.norm))
-end
-
-# inverse of rates
-
-struct TimeRateFilterInv
-  rates::TimeRateFilter
-  norm::Float64
-end
-Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilter(rates,norm)
-
-function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
-  @assert rateinv.rates.axis in axisnames(cr)
-  z_cum = FFTCum(cr)
-
-  progress = progressbar ? cortical_progress(nrates(cr)) : nothing
-  for (ri,HR) in enumerate(rate_filters(z_cum,cr,use_conj=true))
-    addfft!(z_cum,cr[:,ri,:],HR)
-    next!(progress)
-  end
-
-  MetaAxisArray(removeaxes(getmeta(cr),rateinv.rates.axis),
-    normalize!(z_cum,cr,rateinv.norm))
 end
 
 ################################################################################
