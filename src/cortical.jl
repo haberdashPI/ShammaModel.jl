@@ -2,7 +2,7 @@ using AxisArrays
 using FFTW
 
 export rates, scales, nrates, nscales, default_rates, default_scales,
-  cortical, cycoct, co
+  cortical, cycoct, co, scalefilter, ratefilter
 
 # re-express the spectral and cortical dimensions to have meta data specific to
 # an axis and then make it possible to add an axis to an existing array (maybe
@@ -14,13 +14,13 @@ export rates, scales, nrates, nscales, default_rates, default_scales,
 # NOTE: the `low` and `high` fields are used to determine which filters should
 # be low- and high-pass, rather than band-pass
 struct ScaleAxis
-  low::typeof(1cycoct)
-  high::typeof(1cycoct)
+  low::typeof(1.0cycoct)
+  high::typeof(1.0cycoct)
 end
 
 struct RateAxis
-  low::typeof(1Hz)
-  high::typeof(1Hz)
+  low::typeof(1.0Hz)
+  high::typeof(1.0Hz)
 end
 
 cortical_progress(n) = Progress(desc="Cortical Model: ",n)
@@ -37,7 +37,7 @@ const default_rates = sort([-2 .^ (1:0.5:5); 2 .^ (1:0.5:5)]).*Hz
 const default_scales = (2 .^ (-2:0.5:3)).*cycoct
 const spect_rate = 24
 
-# cortical responses of rates and scales simultaneously
+# cortical responses of rates 
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
@@ -47,7 +47,7 @@ struct TimeRateFilter
   axis::Symbol
 end
 
-function ratefilter(rates;bandonly=true,axis=:rate)
+function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
   if axis != :rate && !occursin("rate",string(axis))
     error("Rate axis name `$axis` must contain the word 'rate'.")
   end
@@ -83,7 +83,7 @@ Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilter(rates,norm)
 
 function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
   @assert rateinv.rates.axis in axisnames(cr)
-  z_cum = FFTCum(cr)
+  z_cum = FFTCum(cr,rateinv.rates.axis)
 
   progress = progressbar ? cortical_progress(nrates(cr)) : nothing
   for (ri,HR) in enumerate(rate_filters(z_cum,cr,use_conj=true))
@@ -98,12 +98,12 @@ end
 # cortical responses of scales
 vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
 struct FreqScaleFilter
-  scales::Vector{typeof(1.0cycoct)}
+  data::Vector{typeof(1.0cycoct)}
   bandonly::Bool
   axis::Symbol
 end
 
-function scalefilter(scales;bandonly=true,axis=:scale)
+function scalefilter(scales=default_scales;bandonly=true,axis=:scale)
   if axis != :scale && !occursin("scale",string(axis))
     error("Scale axis name `$axis` must contain the word 'scale'.")
   end
@@ -112,7 +112,7 @@ end
 
 function DSP.filt(scales::FreqScaleFilter,y::MetaAxisArray; progressbar=true, 
                    progress=progressbar ? 
-                     cortical_progress(length(scales.scales)) : nothing)
+                     cortical_progress(length(scales.data)) : nothing)
   @assert :freq in axisnames(y)
 
   if scales.axis in axisnames(y)
@@ -123,7 +123,7 @@ function DSP.filt(scales::FreqScaleFilter,y::MetaAxisArray; progressbar=true,
 
   fir = FIRFiltering(y,Axis{:freq})
 
-  cs = initscales(y)
+  cs = initscales(y,scales)
   for (si,HS) in enumerate(scale_filters(fir,cs,scales.axis))
     z = apply(fir,conj.(vecperm([HS; zero(HS)],ndims(y))))
     cs[Axis{scales.axis}(si)] = view(z,Base.axes(y)...)
@@ -132,6 +132,8 @@ function DSP.filt(scales::FreqScaleFilter,y::MetaAxisArray; progressbar=true,
 
   cs
 end
+
+# inverse of scales
 
 struct FreqScaleFilterInv
   scales::FreqScaleFilter
@@ -142,14 +144,14 @@ Base.inv(scales::FreqScaleFilter;norm=0.9) = FreqScaleFilterInv(scales,norm)
 function DSP.filt(scaleinv::FreqScaleFilterInv,cr::MetaAxisArray,progressbar=true)
   @assert scaleinv.scales.axis in axisnames(cr)
  
-  z_cum = FFTCum(cr)
+  z_cum = FFTCum(cr,scaleinv.scales.axis)
 
   progress = progressbar ? cortical_progress(nscales(cr)) : nothing
-  for (si,HS) in enumerate(scale_filters(z_cum,cr,scaleinv.scale.axis))
-    addfft!(z_cum,cr[Axis{scaleinv.scale.axis}(si)],[HS; zero(HS)]')
+  for (si,HS) in enumerate(scale_filters(z_cum,cr,scaleinv.scales.axis))
+    addfft!(z_cum,cr[Axis{scaleinv.scales.axis}(si)],[HS; zero(HS)]')
     next!(progress)
   end
-  MetaAxisArray(removeaxes(getmeta(cr),scaleinv.scale.axis),
+  MetaAxisArray(removeaxes(getmeta(cr),scaleinv.scales.axis),
     normalize!(z_cum,cr,scaleinv.norm))
 end
 
@@ -157,8 +159,8 @@ end
 # private helper functions
 
 function find_fft_dims(y)
-  @assert axisdim(y,Axis{:freq}()) == ndims(y)
-  @assert axisdim(y,Axis{:time}()) == 1
+  @assert axisdim(y,Axis{:freq}) == ndims(y)
+  @assert axisdim(y,Axis{:time}) == 1
   find_fft_dims(size(y))
 end
 find_fft_dims(y::NTuple{N,Int}) where {N} =
@@ -201,7 +203,7 @@ function initrates(y,rates,rateax=:rate,bandonly=false)
   MetaAxisArray(axis_meta,axar)
 end
 
-initscales(y,scales::TimeRateFilter) = 
+initscales(y,scales::FreqScaleFilter) = 
   initscales(y,scales.data,scales.axis,scales.bandonly)
 function initscales(y,scales,scaleax=:scale,bandonly=false)
   scales = sort(scales)
@@ -221,7 +223,7 @@ end
 reshape_for(v::Array{T,3},cr::AxisArray{T,3}) where T = v
 reshape_for(v::Array{T,4},cr::AxisArray{T,4}) where T = v
 reshape_for(v::Array{T,3},cr::AxisArray{T,4}) where T =
-    reshape(v,ntimes(cr),1,nfreqs(cr))
+    reshape(v,ntimes(cr),1,nfrequencies(cr))
 
 # keeps track of cumulative sum of FIR filters
 # in frequency-space so we can readily normalize the result.
@@ -240,8 +242,8 @@ function withoutdim(dims,without)
 end
 
 function FFTCum(cr::MetaAxisArray,withoutax)
-  withoutd = axisdim(withoutax)
-  dims = find_fft_dims(withoutdim(cr,withoutd))
+  withoutd = axisdim(cr,Axis{withoutax})
+  dims = find_fft_dims(withoutdim(size(cr),withoutd))
   mult = fill(ndims(cr),1)
   mult[1] += startswith(string(withoutax),"scale")
   mult[end] += startswith(string(withoutax),"rate")
@@ -256,25 +258,25 @@ Base.ndims(x::FFTCum) = ndims(x.z_cum)
 
 function addfft!(x::FFTCum,cr,h)
   for I in CartesianIndices(size(x.z)[2:end-1])
-    x.z[1:ntimes(cr),I,1:nfreqs(cr)] = cr[1:ntimes(cr),I,1:nfreqs(cr)]
-    Z[:,I,:] = x.plan * x.z[:,I,:]
+    x.z[1:ntimes(cr),I,1:nfrequencies(cr)] = cr[1:ntimes(cr),I,1:nfrequencies(cr)]
+    Z = x.plan * x.z[:,I,:]
     x.h_cum[:,I,:] .+= abs2.(h)
-    x.z_cum[:,I,:] .+= h .* Z[:,I,:]
+    x.z_cum[:,I,:] .+= h .* Z
   end
   x
 end
 
 function normalize!(x::FFTCum,cr,norm)
   inner_dims = size(x.z)[2:end-1]
-  result = similar(real(eltype(cr)),ntimes(cr),inner_dims...,nfreqs(cr))
+  result = similar(cr,real(eltype(cr)),ntimes(cr),inner_dims...,nfrequencies(cr))
   for I in CartesianIndices(size(x.z)[2:end-1])
     x.h_cum[:,I,1] .*= 2
-    old_sum = sum(x.h_cum[:,I,nfreqs(cr)])
+    old_sum = sum(x.h_cum[:,I,nfrequencies(cr)])
     x.h_cum[:,I,:] .= norm.*x.h_cum[:,I,:] .+ (1 .- norm).*maximum(x.h_cum[:,I,:])
-    x.h_cum[:,I,:] .*= old_sum ./ sum(view(x.h_cum[:,I,:],:,nfreqs(cr)))
+    x.h_cum[:,I,:] .*= old_sum ./ sum(view(x.h_cum[:,I,:],:,nfrequencies(cr)))
     x.z_cum[:,I,:] ./= x.h_cum[:,I,:]
 
-    spectc = view((x.plan \ x.z_cum[:,I,:]),1:ntimes(cr),1:nfreqs(cr))
+    spectc = view((x.plan \ x.z_cum[:,I,:]),1:ntimes(cr),1:nfrequencies(cr))
     result[:,I,:] .= max.(real.(2 .* spectc),0)
   end
 
@@ -313,11 +315,11 @@ end
 
 function scale_filters(Y,x,scaleax)
   N_f = size(Y,ndims(Y)) >> 1
-  scale = getproperty(x,scaleax)
+  scaleparam = getproperty(x,scaleax)
   map(scales(x)) do scale
 	  scale_filter(ustrip(uconvert(cycoct,scale)), N_f, spect_rate,
-                 scale == scale.low ? :low : 
-                 scale < scale.high ? :band : :high)
+                 scale == scaleparam.low ? :low : 
+                 scale < scaleparam.high ? :band : :high)
   end
 end
 
@@ -331,12 +333,12 @@ end
 
 function rate_filters(Y,x,rateax;use_conj=false)
   N_t = size(Y,1) >> 1
-  rate = getproperty(x,rateax)
+  rateparam = getproperty(x,rateax)
 
   map(rates(x)) do rate
     rate_filter(ustrip(uconvert(Hz,rate)), N_t, x.time.Δ,
-                abs(rate) == rate.low ? :low :
-                abs(rate) < rate.high ? :band : :high,use_conj)
+                abs(rate) == rateparam.low ? :low :
+                abs(rate) < rateparam.high ? :band : :high,use_conj)
   end
 end
 

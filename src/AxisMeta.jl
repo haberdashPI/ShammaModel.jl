@@ -45,8 +45,8 @@ end
 function removeaxes(meta::AxisMeta,rem...)
   axes = Base.getfield(meta,:axes)
   fields = setdiff(fieldnames(typeof(axes)),rem)
-  vals = tuple(map(f -> axes[f],fields))
-  AxisMeta(NamedTuple{fields,typeof(vals)}(vals))
+  vals = Tuple(map(f -> axes[f],fields))
+  AxisMeta(NamedTuple{Tuple(fields),typeof(vals)}(vals))
 end
 
 function describe_axes(io::IO,x)

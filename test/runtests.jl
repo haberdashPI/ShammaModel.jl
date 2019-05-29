@@ -8,10 +8,11 @@ using PlotAxes
 using ShammaModel
 
 x = SampleBuf(sin.(2π .* 1000 .* range(0,stop=1,length=8000)),8000)
-
 X = filt(audiospect,x)
+
 err = 0.05
-as_x_hat = filt(inv(audiospect,target_error=err,max_iterations=1000),x_hat)
+x_hat = filt(inv(audiospect,target_error=err,max_iterations=1000),X)
+as_x_hat = filt(audiospect,x_hat)
 
 @testset "Spectrogram" begin
   @test_throws ErrorException filt(audiospect,SampleBuf(collect(1:10),4000))
@@ -33,12 +34,15 @@ as_x_hat = filt(inv(audiospect,target_error=err,max_iterations=1000),x_hat)
   @test floor.(freq_ticks(X)[1]./10) == freq_ticks(X)[1]./10
 end
 
+# TODO: add tests for plotting cortical data as well
 @testset "Data is plottable" begin
   @test size(PlotAxes.asplotable(X)[1],1) == length(X)
 end
 
-cr = cortical(X,rates=default_rates,scales=default_scales)
-X_hat = audiospect(cr)
+scalef = scalefilter()
+cr = filt(scalef,X)
+X̂ = filt(inv(scalef),cr)
+
 @testset "Cortical Model" begin
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
