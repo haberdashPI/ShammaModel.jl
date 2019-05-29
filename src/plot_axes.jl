@@ -1,6 +1,6 @@
 function PlotAxes.asplotable(x::AuditorySpectrogram,args...;quantize=(100,128),
     kwds...)
-  logfreqs = log.(ustrip.(freqs(x)))
+  logfreqs = log.(ustrip.(frequencies(x)))
   # if it's essentially a range, make it a range
   if std(diff(logfreqs)) < 1e-8
     logfreqs = range(first(logfreqs),last(logfreqs),length=length(logfreqs))

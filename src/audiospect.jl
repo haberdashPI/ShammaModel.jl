@@ -5,12 +5,11 @@ using JLD2
 using FileIO
 using SampledSignals
 using Statistics
+using Unitful: s
 
-import DSP.Filters.freqs
-
-export freqs, times, nfreqs, ntimes, delta_t, delta_f, Δt, Δf, frame_length,
-  audiospect, freq_ticks, duration, hastimes, HasTimes, HasNoTimes,
-  timedim, describe_axes
+export frequencies, times, nfrequencies, ntimes, delta_t, delta_f, Δt, Δf, 
+  frame_length, audiospect, freq_ticks, duration, hastimes, HasTimes, HasNoTimes,
+  timedim, describe_axes, Audiospect, AudiospectInv, audiospect⁻
 
 ########################################
 # cochlear filters
@@ -42,14 +41,14 @@ resultname(x::AuditorySpectrogram) = "Auditory Spectrogram"
 
 num_base_freqs(x::AxisMeta) = length(x.freq.cochlear.filters)-1
 num_base_freqs(x::MetaAxisArray) = num_base_freqs(getmeta(x))
-nfreqs(x) = length(freqs(x))
+nfrequencies(x) = length(frequencies(x))
 
-function freqs(x::AxisMeta)
+function frequencies(x::AxisMeta)
   result = (440.0Hz * 2.0.^(((1:num_base_freqs(x)).-31)./24 .+ 
     x.freq.octave_shift))
   result[1:x.freq.step:end]
 end
-freqs(as::MetaUnion{AxisArray}) = axisvalues(AxisArrays.axes(as,Axis{:freq}))[1]
+frequencies(as::MetaUnion{AxisArray}) = axisvalues(AxisArrays.axes(as,Axis{:freq}))[1]
 
 ntimes(x) = length(times(x))
 times(as::MetaUnion{AxisArray}) = axisvalues(AxisArrays.axes(as,Axis{:time}))[1]
@@ -83,14 +82,20 @@ usamplerate(x::SampleBuf) = samplerate(x)*Hz
 default_sr(x) = 8000.0Hz
 default_sr(x::SampleBuf) = usamplerate(x)
 
-function asparams(x;fs=default_sr(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
-                  freq_step=1,Δt=delta_t,decay_tc=8,nonlinear=-2,
-                  octave_shift=-1)
-  @assert fs == fixed_fs*Hz "The only sample rate supported is $(fixed_fs)Hz"
+struct Audiospect{P <: AxisMeta}
+  params::P
+end
 
-  time = TimeAxis(
-    uconvert(s,float(Δt)),Float64(decay_tc),uconvert(Hz,float(fs))
-  )
+asseconds(x::Number) = x*s
+asseconds(x::Quantity) = uconvert(s,x)
+asHz(x::Number) = x*Hz
+asHz(x::Quantity) = uconvert(Hz,x)
+
+function Audiospect(;delta_t=10ms,Δt=delta_t,
+                          freq_step=1,decay_tc=8,nonlinear=-2,
+                          octave_shift=-1)
+
+  time = TimeAxis(asseconds(Δt),Float64(decay_tc),asHz(fixed_fs))
   freq = FreqAxis(Float64(nonlinear),Float64(octave_shift),Int(freq_step), 
     cochlear[])
 
@@ -100,72 +105,39 @@ function asparams(x;fs=default_sr(x),delta_t_ms=10,delta_t=delta_t_ms*ms,
          " $recommended_length samples, but you have $(frame_length(p)).")
   end
   
-  AxisMeta(time = time,freq = freq)
+  Audiospect(AxisMeta(time = time,freq = freq))
+end
+struct DefaultAudiospect
+end
+const audiospect=DefaultAudiospect()
+
+function DSP.filt(f::DefaultAudiospect,x::AbstractArray,progressbar=true)
+  filt(Audiospect(),x,progressbar)
 end
 
-########################################
-# auditory spectrogram interface
-audiospect(x::AbstractArray;progressbar=true,params...) =
-  audiospect(x,asparams(x;params...),progressbar)
+function DSP.filt(f::Audiospect,x::AbstractArray,progressbar=true)
+  @warn "Assuming sample rate of input is $(fixed_fs)."
+  filter_audiospect(x,f.params,progressbar)
+end
 
-####################
-# 'identity' conversions (something that's already basically a spectrogram)
-function audiospect(x::AbstractArray,params::AxisMeta,progressbar=true)
-  if ndims(x) <= 2 && size(x,2) <= 2
-    # the array probably represents a sound
-    @warn "Assuming sample rate of input is $(fixed_fs)."
-    audiospect(SampleBuf(x,samplerate(params)))
-  else
-    # the array probably represents a spectrogram
-    @assert(ndims(x) == 2,"Input to audiospect must be a sound or a "*
-            "previously created spectrogram")
-    @assert(size(x,2) == nfreqs(params),
-            "Presumed input to be a spectrogram but the "*
-            "number of columns do not match the number of frequency channels.")
-
-    f = Axis{:freq}(freqs(params))
-    t = Axis{:time}(times(params,x))
-    MetaArray(params,AxisArray(x,t,f))
+function DSP.filt(f::Audiospect,x::AxisArray,progressbar=true)
+  @assert hastimes(x)
+  if step(times(x)) != (1/fixed_fs)*s
+    error("Expected samplerate of $(fixed_fs) Hz.")
   end
+  filter_audiospect(x,f.params,progressbar)
 end
 
-function audiospect(x::AxisArray{T,2} where T,params::AxisMeta,progressbar=true)
-  if nfreqs(x) != nfreqs(params)
-    freqs_p = freqs(params)
-    if all(fr -> any(x -> isapprox(ustrip(x),ustrip(fr),atol=1e-8),freqs_p),
-           freqs(x))
-      @warn("Some of the frequency channels are missing.")
-      if params.Δt != Δt(x)
-        error("Parameters do not match Δt of input.")
-      end
-      MetaArray(params,x)
-    else
-      missing_freq = findfirst(freqs(x)) do fr
-        !any(x -> isapprox(ustrip(x),ustrip(fr),atol=1e-8),freqs_p)
-      end
-      error("Frequency channels of array and parameters do not match:\n",
-            "Param freqs: ",string(freqs_p),"\n",
-            "Array freqs: ",freqs(x),"\n",
-            "First missing freq: ",string(missing_freq))
-    end
-  else
-    MetaArray(params,x)
+function DSP.filt(f::Audiospect,x::SampleBuf,progressbar=true)
+  if samplerate(x) != fixed_fs
+    error("Expected samplerate of $(fixed_fs) Hz.")
   end
-end
-
-function audiospect(x::AuditorySpectrogram,params::AxisMeta,progressbar=true)
-  @assert(MetaArrays.getmeta(x) == params,
-          "Parameters of spectrogram and input parameters do not match")
-  x
+  filter_audiospect(x,f.params,progressbar)
 end
 
 ####################
 # the actual computation of a spectrogram
-function audiospect(x::SampleBuf,params::AxisMeta,progressbar=true)
-  if usamplerate(x) != fixed_fs*Hz
-    error("Unsupported sample rate. Must be $(fixed_fs).")
-  end
-
+function filter_audiospect(x::AbstractArray,params::AxisMeta,progressbar=true)
   frame_len  = frame_length(params)
   N = ceil(Int,length(x) / frame_len) # of frames
   x_ = if length(x) < N*frame_len
@@ -173,10 +145,10 @@ function audiospect(x::SampleBuf,params::AxisMeta,progressbar=true)
   else
     x
   end
-  audiospect_helper(x_,N,params,progressbar)
+  filter_audiospect__(x_,N,params,progressbar)
 end
 
-function audiospect_helper(x::AbstractVector{T}, N, params::MetaAxisLike,
+function filter_audiospect__(x::AbstractVector{T}, N, params::MetaAxisLike,
                            progressbar=true, internal_call=false) where {T}
   M = length(params.freq.cochlear.filters)
   Y = fill(zero(float(T)),N, M-1)
@@ -207,7 +179,7 @@ function audiospect_helper(x::AbstractVector{T}, N, params::MetaAxisLike,
   if internal_call
     Y,Y_haircell
   else
-    f = Axis{:freq}(freqs(params))
+    f = Axis{:freq}(frequencies(params))
     t = Axis{:time}(times(params,Y))
 
     MetaAxisArray(params,AxisArray(Y[:,1:params.freq.step:end],t,f))
@@ -216,20 +188,26 @@ end
 
 ########################################
 # inverse of auditory spectorgram
-function audiospectinv
-end
 
-const audiospect⁻ = audiospectinv
-function audiospectinv(y_in::AuditorySpectrogram;
-                       max_iterations=typemax(Int),
-                       target_error=0.05,progressbar=true)
+Base.@kwdef struct AudiospectInv
+  max_iterations::Int = typemax(Int)
+  target_error::Float64 = 0.05
+end
+Base.inv(x::DefaultAudiospect;kwds...) = AudiospectInv(;kwds...)
+Base.inv(x::Audiospect;kwds...) = AudiospectInv(;kwds...)
+const audiospect⁻ = AudiospectInv()
+
+function DSP.filt(f::AudiospectInv,y_in::AuditorySpectrogram,
+  progressbar=true)
+  max_iterations = f.max_iterations; target_error = f.target_error
+
   @assert(max_iterations < typemax(Int) || target_error < Inf,
           "No stopping criterion specified (max_iterations or target_error).")
   M = length(y_in.freq.cochlear.filters)
 
   # expand y to include all frequencies
   y = zeros(eltype(y_in),size(y_in,1),M-1)
-  f_ixs = minimum(freqs(y_in)) .<= freqs(y_in) .<= maximum(freqs(y_in))
+  f_ixs = minimum(frequencies(y_in)) .<= frequencies(y_in) .<= maximum(frequencies(y_in))
   # NOTE: this does not currently support frequency decimation
   # because I don't yet need it
   @assert sum(f_ixs) == size(y_in,2) "Unxpected frequency resolution."
@@ -255,7 +233,7 @@ function audiospectinv(y_in::AuditorySpectrogram;
     if min_err < target_error; break end
     y_in.freq.nonlinear == 0 && standardize!(x)
 
-    ŷ,ŷ_haircell = audiospect_helper(x,N,y_in,false,true)
+    ŷ,ŷ_haircell = filter_audiospect__(x,N,y_in,false,true)
     x = match_x(y_in,x,y,ŷ,ŷ_haircell)
 
     err = relative_error!(y,ŷ)
@@ -286,8 +264,8 @@ end
 ########################################
 # visualization utility
 function freq_ticks(as)
-  a = minimum(freqs(as))
-  b = maximum(freqs(as))
+  a = minimum(frequencies(as))
+  b = maximum(frequencies(as))
   step = 0.25
 
   helper(step) = round.(filter(f -> a <= f*Hz <= b,1000*2.0.^(-3:step:2)),
@@ -297,7 +275,7 @@ function freq_ticks(as)
     fbreaks = helper(step *= 2)
   end
 
-  fs = ustrip.(uconvert.(Hz,freqs(as)))
+  fs = ustrip.(uconvert.(Hz,frequencies(as)))
 
   findices = mapslices(abs.(fbreaks .- fs'),dims=2) do row
     _, i = findmin(row)
@@ -359,7 +337,7 @@ end
 
 function inv_guess(params::MetaAxisLike,y::AbstractMatrix)
   # the initial guess only uses the first 48 channels
-  f = ustrip.(uconvert.(Hz,freqs(params)))[1:48]
+  f = ustrip.(uconvert.(Hz,frequencies(params)))[1:48]
   steps = 1:frame_length(params)*size(y,1)
   indices = ceil.(Int,steps / frame_length(params))
   t = steps ./ ustrip(uconvert(Hz,params.time.fs))

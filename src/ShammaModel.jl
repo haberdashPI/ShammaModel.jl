@@ -26,8 +26,6 @@ include("audiospect.jl")
 include("cortical.jl")
 include("plot_axes.jl")
 
-# include("rplots.jl")
-# include("vplots.jl")
 const localunits = Unitful.basefactors
 const localpromotion = Unitful.promotion
 function __init__()
@@ -39,9 +37,6 @@ function __init__()
     end
     CochFilters(filters,file["norm"])
   end
-
-  # @require RCall="6f49c342-dc21-5d91-9882-a32aef131414" include("rplots.jl")
-  # @require VegaLite include("rplots.jl")
 
   merge!(Unitful.basefactors, localunits)
   merge!(Unitful.promotion, localpromotion)

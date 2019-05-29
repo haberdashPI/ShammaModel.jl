@@ -38,8 +38,6 @@ const default_scales = (2 .^ (-2:0.5:3)).*cycoct
 const spect_rate = 24
 
 # cortical responses of rates and scales simultaneously
-asHz(x) = x*Hz
-asHz(x::Quantity) = uconvert(Hz,x)
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
