@@ -1,5 +1,7 @@
 using AxisArrays
 using MetaArrays
+using ImageInTerminal
+using Colors
 
 struct AxisMeta{Axs}
     axes::Axs # map from :axis -> metadata
@@ -56,15 +58,23 @@ function describe_axes(io::IO,x)
   end
 end
 
-function Base.show(io::IO,::MIME"text/plain",x::MetaAxisArray)
-  if !get(io, :compact, false)
+resultname(x) = "Data with axes: "
+function Base.show(io::IO,mime::MIME"text/plain",x::MetaAxisArray)
+  if get(io, :compact, false)
     println(io,resultname(x))
   else
-    println(io,string(duration(x))," ",resultname(x))
+    if hastimes(x) isa HasTimes
+      println(io,string(duration(x))," ",resultname(x))
+    else
+      println(io,resultname(x))
+    end
     describe_axes(io,x)
+    if ndims(x) <= 2
+      lo,hi = extrema(x)
+      image = reverse(Gray.((getcontents(x) .- lo)./ (hi - lo)),dims=2)'
+      ImageInTerminal.imshow(io,image,ImageInTerminal.colormode[1])
+    end
   end
 end
 
-# TODO: some sort of accessor function, e.g. by 
-# TODO: someway to add a new axis to an existing description    
-    
+Base.show(io::IO, m::MIME"img/png", x::MetaAxisArray) = show(io,m,plotaxes(x))

@@ -5,7 +5,6 @@ using JLD2
 using FileIO
 using SampledSignals
 using Statistics
-using Debugger
 
 import DSP.Filters.freqs
 
@@ -68,11 +67,11 @@ duration(x::SampleBuf) = nframes(x) / samplerate(x)
 delta_t(x) = Δt(x)
 delta_f(x) = Δf(x)
 
-frame_length(params::AxisMeta) = frame_length(params.time)
+frame_length(params::MetaAxisLike) = frame_length(params.time)
 frame_length(ax::TimeAxis) = floor(Int,ax.Δ * ax.fs)
 Δt(params::MetaAxisLike) = params.time.Δ
 function Δf(params::MetaAxisLike) 
-  @assert !isempty(params.freq.cochlear) 
+  @assert !isempty(params.freq.cochlear.filters) 
   2^(1/24)
 end
 usamplerate(params::MetaAxisLike) = uconvert(Hz,params.time.fs)
@@ -211,15 +210,19 @@ function audiospect_helper(x::AbstractVector{T}, N, params::MetaAxisLike,
     f = Axis{:freq}(freqs(params))
     t = Axis{:time}(times(params,Y))
 
-    MetaAxisArray(params,AxisArray(Y[:,1:params.freq_step:end],t,f))
+    MetaAxisArray(params,AxisArray(Y[:,1:params.freq.step:end],t,f))
   end
 end
 
 ########################################
 # inverse of auditory spectorgram
-function SampledSignals.SampleBuf(y_in::AuditorySpectrogram;
-                                  max_iterations=typemax(Int),
-                                  target_error=0.05,progressbar=true)
+function audiospectinv
+end
+
+const audiospect⁻ = audiospectinv
+function audiospectinv(y_in::AuditorySpectrogram;
+                       max_iterations=typemax(Int),
+                       target_error=0.05,progressbar=true)
   @assert(max_iterations < typemax(Int) || target_error < Inf,
           "No stopping criterion specified (max_iterations or target_error).")
   M = length(y_in.freq.cochlear.filters)

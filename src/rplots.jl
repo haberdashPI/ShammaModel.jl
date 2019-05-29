@@ -7,7 +7,7 @@ import Colors: RGB
 
 # TODO??: move to seperate file that is always loaded
 # so both rplots and vplots can use it
-const cmap = Dict{Symbol,Vector{RGB}}()
+const cmap = Dict{Symbol,Vector{Colorant}}()
 datadir = joinpath(@__DIR__,"..","data")
 ascolors(lines) = parse.(Color,"#".*readlines(lines))
 cmap[:D1] = ascolors(joinpath(datadir,"diverging_colors.txt"))

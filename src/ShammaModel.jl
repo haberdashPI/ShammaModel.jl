@@ -4,6 +4,7 @@ using Unitful
 using Unitful: ms, s, Hz, kHz
 using ProgressMeter
 using Requires
+using PlotAxes
 
 export ms, s, Hz, kHz
 
@@ -23,6 +24,7 @@ const cochlear = Ref{CochFilters}()
 include("AxisMeta.jl")
 include("audiospect.jl")
 include("cortical.jl")
+include("plot_axes.jl")
 
 # include("rplots.jl")
 # include("vplots.jl")
@@ -38,11 +40,7 @@ function __init__()
     CochFilters(filters,file["norm"])
   end
 
-  @require RCall="6f49c342-dc21-5d91-9882-a32aef131414" include("rplots.jl")
-  @require PlotAxes="8b6f5f00-d239-11e8-3a24-33314b00f6b0" begin
-    using .PlotAxes
-    include("plot_axes.jl")
-  end
+  # @require RCall="6f49c342-dc21-5d91-9882-a32aef131414" include("rplots.jl")
   # @require VegaLite include("rplots.jl")
 
   merge!(Unitful.basefactors, localunits)

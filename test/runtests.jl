@@ -33,6 +33,10 @@ as_x_hat = audiospect(x_hat)
   @test floor.(freq_ticks(X)[1]./10) == freq_ticks(X)[1]./10
 end
 
+@testset "Data is plottable" begin
+  @test size(PlotAxes.asplotable(X)[1],1) == length(X)
+end
+
 cr = cortical(X,rates=default_rates,scales=default_scales)
 X_hat = audiospect(cr)
 @testset "Cortical Model" begin
