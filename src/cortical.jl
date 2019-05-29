@@ -41,17 +41,27 @@ const spect_rate = 24
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
-function ratefilt(y::MetaAxisArray, rates; progressbar=true, bandonly=true,
-                  progress=progressbar ? cortical_progress(length(rates)) :
-                  nothing, rateax=:rate)
-  @assert :time in axisnames(y)
-  if rateax != :rate && !occursin("rate",string(rateax))
-    error("Rate axis name `$rateax` must contain the word 'rate'.")
+struct TimeRateFilter
+  rates::Vector{typeof(1.0s)}
+  bandonly::Bool
+  axis::Symbol
+end
+
+function rates(rates;bandonly=true,axis=:rate)
+  if axis != :rate && !occursin("rate",string(aixs))
+    error("Rate axis name `$axis` must contain the word 'rate'.")
   end
-  if rateax in axisnames(y)
-    error("Input already has an axis named `$rateax`. If you intended to add ",
-          "a second rate dimension, set keyword argument `rateax` to a ",
-          "different value to create a second rate axis.")
+  TimeRateFilter(rates,bandonly,axis)
+end
+
+function DSP.filt(rates::TimeRateFilter,y::MetaAxisArray; progressbar=true, 
+                  progress=progressbar ? 
+                    cortical_progress(length(rates.rates)) : nothing)
+  @assert :time in axisnames(y)
+  if rates.axis in axisnames(y)
+    error("Input already has an axis named `$(rates.axis)`. If you intended ",
+          "to add a second rate dimension, change the `rates`, `axis` keyword ",
+          "argument to a different value to create a second rate axis.")
   end
 
   fir = FIRFiltering(y,Axis{:time})
@@ -66,6 +76,14 @@ end
 
 # cortical responses of scales
 vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
+struct FreqScaleFilter
+  scales::Vector{typeof(1.0cycoct)}
+  bandonly::Bool
+  axis::Symbol
+end
+
+function scales(scales;bandonly=true,axis=:scale)
+
 function scalefilt(y::MetaAxisArray, scales; progressbar=true, bandonly=true,
                    progress=progressbar ? cortical_progress(length(scales)) :
                    nothing, scaleax=:scale)
