@@ -11,8 +11,7 @@ x = SampleBuf(sin.(2π .* 1000 .* range(0,stop=1,length=8000)),8000)
 
 X = filt(audiospect,x)
 err = 0.05
-x_hat = filt(AudiospectInv(target_error=err,max_iterations=1000),X)
-as_x_hat = filt(audiospect,x_hat)
+as_x_hat = filt(inv(audiospect,target_error=err,max_iterations=1000),x_hat)
 
 @testset "Spectrogram" begin
   @test_throws ErrorException filt(audiospect,SampleBuf(collect(1:10),4000))

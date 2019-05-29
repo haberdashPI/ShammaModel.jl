@@ -42,13 +42,13 @@ ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
 struct TimeRateFilter
-  rates::Vector{typeof(1.0s)}
+  data::Vector{typeof(1.0s)}
   bandonly::Bool
   axis::Symbol
 end
 
-function rates(rates;bandonly=true,axis=:rate)
-  if axis != :rate && !occursin("rate",string(aixs))
+function ratefilter(rates;bandonly=true,axis=:rate)
+  if axis != :rate && !occursin("rate",string(axis))
     error("Rate axis name `$axis` must contain the word 'rate'.")
   end
   TimeRateFilter(rates,bandonly,axis)
@@ -56,18 +56,18 @@ end
 
 function DSP.filt(rates::TimeRateFilter,y::MetaAxisArray; progressbar=true, 
                   progress=progressbar ? 
-                    cortical_progress(length(rates.rates)) : nothing)
+                    cortical_progress(length(rates.data)) : nothing)
   @assert :time in axisnames(y)
   if rates.axis in axisnames(y)
     error("Input already has an axis named `$(rates.axis)`. If you intended ",
-          "to add a second rate dimension, change the `rates`, `axis` keyword ",
-          "argument to a different value to create a second rate axis.")
+          "to add a second rate dimension, change the `axis` keyword argument ",
+          "of `ratefilter` to a different value to create a second rate axis.")
   end
 
   fir = FIRFiltering(y,Axis{:time})
-  cr = initrates(y,rates,rateax,bandonly)
-  for (ri,HR) in enumerate(rate_filters(fir,cr,rateax))
-    cr[Axis{rateax}(ri)] = view(apply(fir,HR),Base.axes(y)...)
+  cr = initrates(y,rates)
+  for (ri,HR) in enumerate(rate_filters(fir,cr,rates.axis))
+    cr[Axis{rates.axis}(ri)] = view(apply(fir,HR),Base.axes(y)...)
     next!(progress)
   end
 
@@ -82,49 +82,66 @@ struct FreqScaleFilter
   axis::Symbol
 end
 
-function scales(scales;bandonly=true,axis=:scale)
-
-function scalefilt(y::MetaAxisArray, scales; progressbar=true, bandonly=true,
-                   progress=progressbar ? cortical_progress(length(scales)) :
-                   nothing, scaleax=:scale)
-  @assert :freq in axisnames(y)
-  if scaleax != :scale && !occursin("scale",string(scaleax))
-    error("Scale axis name `$scaleax` must contain the word 'scale'.")
+function scalefilter(scales;bandonly=true,axis=:scale)
+  if axis != :scale && !occursin("scale",string(axis))
+    error("Scale axis name `$axis` must contain the word 'scale'.")
   end
-  if scaleax in axisnames(y)
-    error("Input already has an axis named `$scaleax`. If you intended to add ",
-          "a second scale dimension, set keyword argument `scaleax` to a ",
-          "different value to create a second scale axis.")
+  FreqScaleFilter(scales,bandonly,axis)
+end
+
+function DSP.filt(scales::FreqScaleFilter,y::MetaAxisArray; progressbar=true, 
+                   progress=progressbar ? 
+                     cortical_progress(length(scales.scales)) : nothing)
+  @assert :freq in axisnames(y)
+
+  if scales.axis in axisnames(y)
+    error("Input already has an axis named `$(scales.axis)`. If you intended ",
+          "to add a second rate dimension, change the `axis` keyword argument ",
+          "of `scalefilter` to a different value to create a second rate axis.")
   end
 
   fir = FIRFiltering(y,Axis{:freq})
 
-  cs = initscales(y,scales,scalex,bandonly)
-  for (si,HS) in enumerate(scale_filters(fir,cs,scaleax))
+  cs = initscales(y)
+  for (si,HS) in enumerate(scale_filters(fir,cs,scales.axis))
     z = apply(fir,conj.(vecperm([HS; zero(HS)],ndims(y))))
-    cs[Axis{scaleax}(si)] = view(z,Base.axes(y)...)
+    cs[Axis{scales.axis}(si)] = view(z,Base.axes(y)...)
     next!(progress)
   end
 
   cs
 end
 
-function scaleinv(y::MetaAxisArray;norm=0.9,progressbar=true,scaleax=:scale)
-  @assert scaleax in axisnames(y)
- 
-  z_cum = FFTCum(y)
+struct FreqScaleFilterInv
+  scales::FreqScaleFilter
+  norm::Float64
+end
+Base.inv(scales::FreqScaleFilter;norm=0.9) = FreqScaleFilterInv(scales,norm)
 
-  progress = progressbar ? cortical_progress(nscales(y)) : nothing
-  for (si,HS) in enumerate(scale_filters(z_cum,y,scalex))
-    addfft!(z_cum,y[Axis{scaleax}(si)],[HS; zero(HS)]')
+function DSP.filt(scaleinv::FreqScaleFilterInv,cr::MetaAxisArray,progressbar=true)
+  @assert scaleinv.scales.axis in axisnames(cr)
+ 
+  z_cum = FFTCum(cr)
+
+  progress = progressbar ? cortical_progress(nscales(cr)) : nothing
+  for (si,HS) in enumerate(scale_filters(z_cum,cr,scaleinv.scale.axis))
+    addfft!(z_cum,cr[Axis{scaleinv.scale.axis}(si)],[HS; zero(HS)]')
     next!(progress)
   end
-  MetaAxisArray(removeaxes(getmeta(cr),scaleax),normalize!(z_cum,cr,norm))
+  MetaAxisArray(removeaxes(getmeta(cr),scaleinv.scale.axis),
+    normalize!(z_cum,cr,scaleinv.norm))
 end
 
 # inverse of rates
-function rateinv(cr::MetaAxisArray;norm=0.9,progressbar=true,rateax=:rate)
-  @assert rateax in axisnames(cr)
+
+struct TimeRateFilterInv
+  rates::TimeRateFilter
+  norm::Float64
+end
+Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilter(rates,norm)
+
+function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
+  @assert rateinv.rates.axis in axisnames(cr)
   z_cum = FFTCum(cr)
 
   progress = progressbar ? cortical_progress(nrates(cr)) : nothing
@@ -133,7 +150,8 @@ function rateinv(cr::MetaAxisArray;norm=0.9,progressbar=true,rateax=:rate)
     next!(progress)
   end
 
-  MetaAxisArray(removeaxes(getmeta(cr),rateax),normalize!(z_cum,cr,norm))
+  MetaAxisArray(removeaxes(getmeta(cr),rateinv.rates.axis),
+    normalize!(z_cum,cr,rateinv.norm))
 end
 
 ################################################################################
@@ -169,6 +187,8 @@ apply(fir::FIRFiltering,H) = fir.plan * (fir.Y .* H)
 Base.size(x::FIRFiltering,i...) = size(x.Y,i...)
 Base.ndims(x::FIRFiltering) = ndims(x.Y)
 
+initrates(y,rates::TimeRateFilter) = 
+  initrates(y,rates.data,rates.axis,rates.bandonly)
 function initrates(y,rates,rateax=:rate,bandonly=false)
   rates = sort(rates)
   r = Axis{rateax}(rates)
@@ -182,6 +202,8 @@ function initrates(y,rates,rateax=:rate,bandonly=false)
   MetaAxisArray(axis_meta,axar)
 end
 
+initscales(y,scales::TimeRateFilter) = 
+  initscales(y,scales.data,scales.axis,scales.bandonly)
 function initscales(y,scales,scaleax=:scale,bandonly=false)
   scales = sort(scales)
   s = Axis{scaleax}(scales)
