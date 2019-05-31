@@ -43,6 +43,10 @@ scalef = scalefilter()
 cr = filt(scalef,X)
 X̂ = filt(inv(scalef),cr)
 
+ratef = ratefilter()
+cr = filt(ratef,X)
+X̂ = filt(inv(ratef),cr)
+
 @testset "Cortical Model" begin
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])

@@ -42,7 +42,7 @@ ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
 struct TimeRateFilter
-  data::Vector{typeof(1.0s)}
+  data::Vector{typeof(1.0Hz)}
   bandonly::Bool
   axis::Symbol
 end
@@ -79,14 +79,14 @@ struct TimeRateFilterInv
   rates::TimeRateFilter
   norm::Float64
 end
-Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilter(rates,norm)
+Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilterInv(rates,norm)
 
 function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
   @assert rateinv.rates.axis in axisnames(cr)
   z_cum = FFTCum(cr,rateinv.rates.axis)
 
   progress = progressbar ? cortical_progress(nrates(cr)) : nothing
-  for (ri,HR) in enumerate(rate_filters(z_cum,cr,use_conj=true))
+  for (ri,HR) in enumerate(rate_filters(z_cum,cr,rateinv.rates.axis,use_conj=true))
     addfft!(z_cum,cr[:,ri,:],HR)
     next!(progress)
   end
