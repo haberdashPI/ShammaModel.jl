@@ -38,7 +38,7 @@ X_hat = audiospect(cr)
 @testset "Cortical Model" begin
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
-  @test mean((X_hat .- X).^2 ./ sum(X.^2)) < 1e-4
+  @test quantile(vec((X_hat .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
   @test rates(cr) == default_rates
   @test scales(cr) == default_scales
   @test freq_ticks(cr) == freq_ticks(X)
