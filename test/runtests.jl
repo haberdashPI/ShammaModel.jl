@@ -39,18 +39,22 @@ end
   @test size(PlotAxes.asplotable(X)[1],1) == length(X)
 end
 
-scalef = scalefilter()
+# errors for inverse are pretty bad particularly for ratef: I think this might
+# be about the bandonly, that's what I'm working on (but I'm getting some
+# errors) NOTE: that also means I should test the bandonly separately
+
+scalef = scalefilter(bandonly=false)
 cr = filt(scalef,X)
 X̂ = filt(inv(scalef),cr)
 
-ratef = ratefilter()
+ratef = ratefilter(bandonly=false)
 cr = filt(ratef,X)
 X̂ = filt(inv(ratef),cr)
 
 @testset "Cortical Model" begin
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
-  @test quantile(vec((X_hat .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test quantile(vec((X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
   @test rates(cr) == default_rates
   @test scales(cr) == default_scales
   @test freq_ticks(cr) == freq_ticks(X)

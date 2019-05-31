@@ -214,7 +214,7 @@ function initscales(y,scales,scaleax=:scale,bandonly=false)
   axar = AxisArray(zeros(complex(eltype(y)),length.(newax)...),newax...)
   scale_axis = bandonly ? 
     ScaleAxis(-Inf*cycoct,Inf*cycoct) :
-    ScaleAxis(first(scales),last(scales),bandonly)
+    ScaleAxis(first(scales),last(scales))
   axis_meta = addaxes(getmeta(y);Dict(scaleax => scale_axis)...)
   MetaAxisArray(axis_meta,axar)
 end
@@ -325,6 +325,7 @@ end
 
 # create the frequency-scale filter (filter along spectral axis)
 function scale_filter(scale,len,ts,kind)
+  @show kind
   f2 = ((0:len-1)./len.*ts ./ 2 ./ abs(scale)).^2
   H = f2 .* exp.(1 .- f2)
 
@@ -344,6 +345,7 @@ end
 
 # create the temporal-rate filter (filter along temporal axis)
 function rate_filter(rate,len,Δt,kind,use_conj=false,return_partial=false)
+  @show kind
   t = (0:len-1)*ustrip(uconvert(s,Δt))*abs(rate)
   h = @. sin(2π*t) * t^2 * exp(-3.5t)
   h .-= mean(h)
