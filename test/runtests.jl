@@ -68,7 +68,8 @@ end
   scalef = scalefilter(bandonly=false)
   ratef = ratefilter(bandonly=false)
   cr = filt(ratef,filt(scalef,X))
-  X̂ = filt(inv(ratef),filt(inv(scalef),cr))
+  X̂ = filt(inv(scalef),cr)
+  # X̂ = filt(inv(ratef),filt(inv(scalef),cr))
 
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])

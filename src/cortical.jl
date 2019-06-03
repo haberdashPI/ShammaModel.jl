@@ -87,7 +87,7 @@ function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
 
   progress = progressbar ? cortical_progress(nrates(cr)) : nothing
   for (ri,HR) in enumerate(rate_filters(z_cum,cr,rateinv.rates.axis,use_conj=true))
-    addfft!(z_cum,cr[:,ri,:],HR)
+    addfft!(z_cum,cr[Axis{rateinv.rates.axis}(ri)],HR)
     next!(progress)
   end
 
@@ -228,10 +228,12 @@ reshape_for(v::Array{T,3},cr::AxisArray{T,4}) where T =
 
 # keeps track of cumulative sum of FIR filters
 # in frequency-space so we can readily normalize the result.
-struct FFTCum{T,P,N,Ax}
+struct FFTCum{T,P,N,M,Ax}
   z::Array{Complex{T},N}
-  z_cum::Array{Complex{T},N}
-  h_cum::Array{T,N}
+  z_cum::Array{Complex{T},M}
+  h_cum::Array{T,M}
+  nfrequencies::Int
+  ntimes::Int
   plan::P
   axes::Ax
 end
@@ -244,24 +246,31 @@ end
 
 function FFTCum(cr::MetaAxisArray,withoutax)
   withoutd = axisdim(cr,Axis{withoutax})
-  dims = find_fft_dims(withoutdim(size(cr),withoutd))
+  dims = find_fft_dims((size(cr)[[1,end]]))
   mult = fill(ndims(cr),1)
   mult[1] += startswith(string(withoutax),"scale")
   mult[end] += startswith(string(withoutax),"rate")
   z = zeros(eltype(cr),(dims .* mult)...)
 
   newaxes = withoutdim(AxisArrays.axes(cr),withoutd)
-  # TODO: instead of z, we need a slice of z, ala 10 lines below
-  FFTCum(z,copy(z),zeros(real(eltype(z)),size(z)...),plan_fft(z),newaxes)
+  cumsize = (size(z,1),withoutdim(size(cr),withoutd)[2:end-1]...,size(z,2))
+
+  z_cum = zeros(eltype(z),cumsize)
+  h_cum = zeros(real(eltype(z)),cumsize)
+  plan = plan_fft(z)
+  FFTCum(z,z_cum,h_cum,nfrequencies(cr),ntimes(cr),plan,newaxes)
 end
 
 Base.size(x::FFTCum,i...) = size(x.z_cum,i...)
 Base.ndims(x::FFTCum) = ndims(x.z_cum)
 
 function addfft!(x::FFTCum,cr,h)
-  for I in CartesianIndices(size(x.z)[2:end-1])
-    x.z[1:ntimes(cr),I,1:nfrequencies(cr)] = cr[1:ntimes(cr),I,1:nfrequencies(cr)]
-    Z = x.plan * x.z[:,I,:]
+  @assert x.nfrequencies == nfrequencies(cr)
+  @assert x.ntimes == ntimes(cr)
+
+  for I in CartesianIndices(size(x)[2:end-1])
+    x.z[1:ntimes(cr),1:nfrequencies(cr)] = cr[1:ntimes(cr),I,1:nfrequencies(cr)]
+    Z = x.plan * x.z
     x.h_cum[:,I,:] .+= abs2.(h)
     x.z_cum[:,I,:] .+= h .* Z
   end
@@ -269,9 +278,9 @@ function addfft!(x::FFTCum,cr,h)
 end
 
 function normalize!(x::FFTCum,cr,norm)
-  inner_dims = size(x.z)[2:end-1]
+  inner_dims = size(x)[2:end-1]
   result = similar(cr,real(eltype(cr)),ntimes(cr),inner_dims...,nfrequencies(cr))
-  for I in CartesianIndices(size(x.z)[2:end-1])
+  for I in CartesianIndices(inner_dims)
     x.h_cum[:,I,1] .*= 2
     old_sum = sum(x.h_cum[:,I,nfrequencies(cr)])
     x.h_cum[:,I,:] .= norm.*x.h_cum[:,I,:] .+ (1 .- norm).*maximum(x.h_cum[:,I,:])
