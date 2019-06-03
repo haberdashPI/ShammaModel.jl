@@ -43,22 +43,42 @@ end
 # be about the bandonly, that's what I'm working on (but I'm getting some
 # errors) NOTE: that also means I should test the bandonly separately
 
-scalef = scalefilter(bandonly=false)
-cr = filt(scalef,X)
-X̂ = filt(inv(scalef),cr)
+@testset "Single dimension cortical model" begin
+  scalef = scalefilter(bandonly=false)
+  S_cr = filt(scalef,X)
+  S_X̂ = filt(inv(scalef),S_cr)
 
-ratef = ratefilter(bandonly=false)
-cr = filt(ratef,X)
-X̂ = filt(inv(ratef),cr)
+  ratef = ratefilter(bandonly=false)
+  R_cr = filt(ratef,X)
+  R_X̂ = filt(inv(ratef),R_cr)
 
-@testset "Cortical Model" begin
+  @test mean(abs,S_cr[:,:,0.9kHz ..1.1kHz]) >
+    mean(abs,S_cr[:,:,1.9kHz .. 2.1kHz])
+  @test mean(abs,R_cr[:,:,0.9kHz ..1.1kHz]) >
+    mean(abs,R_cr[:,:,1.9kHz .. 2.1kHz])
+  @test quantile(vec((S_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test quantile(vec((R_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test isempty(setdiff(scales(S_cr),default_scales))
+  @test isempty(setdiff(rates(R_cr),default_rates))
+  @test freq_ticks(S_cr) == freq_ticks(X)
+  @test freq_ticks(R_cr) == freq_ticks(X)
+end
+
+@testset "Multi dimension cortical model" begin
+  scalef = scalefilter(bandonly=false)
+  ratef = ratefilter(bandonly=false)
+  cr = filt(ratef,filt(scalef,X))
+  X̂ = filt(inv(ratef),filt(inv(scalef),cr))
+
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
-  @test quantile(vec((X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
-  @test rates(cr) == default_rates
-  @test scales(cr) == default_scales
-  @test freq_ticks(cr) == freq_ticks(X)
-  @test Array(cortical(cortical(X,scales=default_scales),rates=default_rates)) ≈
-    Array(cr)
+  @test mean(abs,R_cr[:,:,0.9kHz ..1.1kHz]) >
+    mean(abs,R_cr[:,:,1.9kHz .. 2.1kHz])
+  @test quantile(vec((S_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test quantile(vec((R_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test isempty(setdiff(scales(S_cr),default_scales))
+  @test isempty(setdiff(rates(R_cr),default_rates))
+  @test freq_ticks(S_cr) == freq_ticks(X)
+  @test freq_ticks(R_cr) == freq_ticks(X)
 end
 

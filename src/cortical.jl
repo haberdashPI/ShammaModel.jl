@@ -197,8 +197,9 @@ function initrates(y,rates,rateax=:rate,bandonly=false)
   newax = ax[1],r,ax[2:end]...
 
   axar = AxisArray(zeros(complex(eltype(y)),length.(newax)...),newax...)
+  arates = sort!(unique!(abs.(rates)))
   rate_axis = bandonly ? 
-     RateAxis(-Inf*Hz,Inf*Hz) : RateAxis(first(rates),last(rates))
+     RateAxis(-Inf*Hz,Inf*Hz) : RateAxis(first(arates),last(arates))
   axis_meta = addaxes(getmeta(y);Dict(rateax => rate_axis)...)
   MetaAxisArray(axis_meta,axar)
 end
@@ -250,6 +251,7 @@ function FFTCum(cr::MetaAxisArray,withoutax)
   z = zeros(eltype(cr),(dims .* mult)...)
 
   newaxes = withoutdim(AxisArrays.axes(cr),withoutd)
+  # TODO: instead of z, we need a slice of z, ala 10 lines below
   FFTCum(z,copy(z),zeros(real(eltype(z)),size(z)...),plan_fft(z),newaxes)
 end
 
@@ -318,14 +320,13 @@ function scale_filters(Y,x,scaleax)
   scaleparam = getproperty(x,scaleax)
   map(scales(x)) do scale
 	  scale_filter(ustrip(uconvert(cycoct,scale)), N_f, spect_rate,
-                 scale == scaleparam.low ? :low : 
+                 scale <= scaleparam.low ? :low : 
                  scale < scaleparam.high ? :band : :high)
   end
 end
 
 # create the frequency-scale filter (filter along spectral axis)
 function scale_filter(scale,len,ts,kind)
-  @show kind
   f2 = ((0:len-1)./len.*ts ./ 2 ./ abs(scale)).^2
   H = f2 .* exp.(1 .- f2)
 
@@ -338,14 +339,13 @@ function rate_filters(Y,x,rateax;use_conj=false)
 
   map(rates(x)) do rate
     rate_filter(ustrip(uconvert(Hz,rate)), N_t, x.time.Δ,
-                abs(rate) == rateparam.low ? :low :
+                abs(rate) <= rateparam.low ? :low :
                 abs(rate) < rateparam.high ? :band : :high,use_conj)
   end
 end
 
 # create the temporal-rate filter (filter along temporal axis)
 function rate_filter(rate,len,Δt,kind,use_conj=false,return_partial=false)
-  @show kind
   t = (0:len-1)*ustrip(uconvert(s,Δt))*abs(rate)
   h = @. sin(2π*t) * t^2 * exp(-3.5t)
   h .-= mean(h)
