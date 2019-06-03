@@ -281,13 +281,16 @@ function normalize!(x::FFTCum,cr,norm)
   inner_dims = size(x)[2:end-1]
   result = similar(cr,real(eltype(cr)),ntimes(cr),inner_dims...,nfrequencies(cr))
   for I in CartesianIndices(inner_dims)
-    x.h_cum[:,I,1] .*= 2
-    old_sum = sum(x.h_cum[:,I,nfrequencies(cr)])
-    x.h_cum[:,I,:] .= norm.*x.h_cum[:,I,:] .+ (1 .- norm).*maximum(x.h_cum[:,I,:])
-    x.h_cum[:,I,:] .*= old_sum ./ sum(view(x.h_cum[:,I,:],:,nfrequencies(cr)))
-    x.z_cum[:,I,:] ./= x.h_cum[:,I,:]
+    h_cum = x.h_cum[:,I,:]
+    z_cum = x.z_cum[:,I,:]
 
-    spectc = view((x.plan \ x.z_cum[:,I,:]),1:ntimes(cr),1:nfrequencies(cr))
+    h_cum[:,1] .*= 2 # norm DC component
+    old_sum = sum(h_cum)
+    h_cum .= norm.*h_cum .+ (1 .- norm).*maximum(h_cum)
+    h_cum .*= old_sum ./ sum(h_cum)
+    z_cum ./= h_cum
+
+    spectc = view((x.plan \ z_cum),1:ntimes(cr),1:nfrequencies(cr))
     result[:,I,:] .= max.(real.(2 .* spectc),0)
   end
 
