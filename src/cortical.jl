@@ -41,11 +41,15 @@ const spect_rate = 24
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
-struct TimeRateFilter
+abstract type CorticalFilter
+end
+
+struct TimeRateFilter <: CorticalFilter
   data::Vector{typeof(1.0Hz)}
   bandonly::Bool
   axis::Symbol
 end
+axisname(x::TimeRateFilter) = x.axis
 
 function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
   if axis != :rate && !occursin("rate",string(axis))
@@ -79,7 +83,10 @@ struct TimeRateFilterInv
   rates::TimeRateFilter
   norm::Float64
 end
+axisname(x::TimeRateFilterInv) = axisname(x.rates)
 Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilterInv(rates,norm)
+list_filters(z_cum,cr,rateinv::TimeRateFilterInv) =
+  rate_filters(z_cum,cr,axisname(rateinv),use_conj=true)
 
 function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
   @assert rateinv.rates.axis in axisnames(cr)
@@ -97,11 +104,12 @@ end
 
 # cortical responses of scales
 vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
-struct FreqScaleFilter
+struct FreqScaleFilter <: CorticalFilter
   data::Vector{typeof(1.0cycoct)}
   bandonly::Bool
   axis::Symbol
 end
+axisname(x::FreqScaleFilter) = x.axis
 
 function scalefilter(scales=default_scales;bandonly=true,axis=:scale)
   if axis != :scale && !occursin("scale",string(axis))
@@ -139,20 +147,77 @@ struct FreqScaleFilterInv
   scales::FreqScaleFilter
   norm::Float64
 end
+axisname(x::FreqScaleFilterInv) = axisname(x.scales)
 Base.inv(scales::FreqScaleFilter;norm=0.9) = FreqScaleFilterInv(scales,norm)
+list_filters(z_cum,cr,scaleinv::FreqScaleFilterInv) =
+  scale_filters(z_cum,cr,axisname(scaleinv))
 
 function DSP.filt(scaleinv::FreqScaleFilterInv,cr::MetaAxisArray,progressbar=true)
   @assert scaleinv.scales.axis in axisnames(cr)
  
-  z_cum = FFTCum(cr,scaleinv.scales.axis)
+  z_cum = FFTCum(cr,axisname(scaleinv))
 
   progress = progressbar ? cortical_progress(nscales(cr)) : nothing
-  for (si,HS) in enumerate(scale_filters(z_cum,cr,scaleinv.scales.axis))
-    addfft!(z_cum,cr[Axis{scaleinv.scales.axis}(si)],[HS; zero(HS)]')
+  for (si,HS) in enumerate(list_filters(z_cum,cr,scaleinv))
+    addfft!(z_cum,cr[Axis{axisname(scaleinv)}(si)],[HS; zero(HS)]')
     next!(progress)
   end
-  MetaAxisArray(removeaxes(getmeta(cr),scaleinv.scales.axis),
+  MetaAxisArray(removeaxes(getmeta(cr),axisname(scaleinv)),
     normalize!(z_cum,cr,scaleinv.norm))
+end
+
+struct ComposedFilter{T} <: CorticalFilter
+  data::T
+end
+totuple(x::CorticalFilter) = (x,)
+totuple(x::ComposedFilter) = x.data
+import Base: ∘
+∘(x::CorticalFilter,y::CorticalFilter) = (totuple(x)...,totuple(y)...)
+compose(x::CorticalFilter,y::CorticalFilter) = x ∘ y
+
+function DSP.filt(composed::ComposedFilter,cr::MetaAxisArray,progresbar=true)
+  for filter in composed.data
+    cr = filt(filter,cr,progressbar)
+  end
+  cr
+end
+
+struct ComposedFilterInv{T} <: CorticalFilter
+  c::ComposedFilter{T}
+end
+Base.inv(cf::ComposedFilter) = ComposedFilterInv(cf)
+
+function DSP.filt(compinv::ComposedFilterInv,cr::MetaAxisArray,progressbar=true)
+  z_cum = FFTCum(cr,axisname.(compinv.c.data))
+
+  filters = list_filters(z_cum,cr,compinv.c)
+  progress = progressbar ?  cortical_progress(length(filters)) : nothing
+
+  inner_dims = size(cr)[2:end-1]
+  if length(inner_dims) != length(compinv.c.data)
+    error("When computing the inverse you must invert all dimensions; partial "*
+      "inverses are not yet supported.")
+  end
+
+  for (I,filter) in zip(CartesianIndices(inner_dims),filters)
+    addfft!(z_cum,cr[:,I,:],filter)
+    next!(progress)
+  end
+  MetaAxisArray(removeaxes(getmeta(cr),axisname.(compinv.c.data)...),
+    normalize!(z_cum))
+end
+
+function list_filters(z_cum,cr,cf::ComposedFilterInv)
+  filters = nothing
+  tupleappend(tuple::Tuple,x) = (tuple...,x)
+  tupleappend(x,y) = (x,y)
+  by(::Nothing,x,i) = x
+  by(x,y,i) = tupleappend.(x,vecperm(y,i))
+
+  for (i,Hs) in enumerate(cf.c.data)
+    filters = by(filters,Hs,i)
+  end
+  filters
 end
 
 ################################################################################

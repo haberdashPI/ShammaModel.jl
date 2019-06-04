@@ -67,8 +67,9 @@ end
 @testset "Multi dimension cortical model" begin
   scalef = scalefilter(bandonly=false)
   ratef = ratefilter(bandonly=false)
-  cr = filt(ratef,filt(scalef,X))
-  X̂ = filt(inv(ratef),filt(inv(scalef),cr))
+  cortical = scalef ∘ ratef
+  cr = filt(cortical,X)
+  X̂ = filt(inv(cortical),X)
 
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
