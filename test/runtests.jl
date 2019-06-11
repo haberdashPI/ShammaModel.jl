@@ -64,9 +64,7 @@ end
   @test freq_ticks(R_cr) == freq_ticks(X)
 end
 
-@testset "Multi dimension cortical model" begin
-  scalef = scalefilter(bandonly=false)
-  ratef = ratefilter(bandonly=false)
+@testset "Multi dimensional cortical model" begin
   cortical = scalef ∘ ratef
   cr = filt(cortical,X)
   X̂ = filt(inv(cortical),X)
@@ -83,3 +81,6 @@ end
   @test freq_ticks(R_cr) == freq_ticks(X)
 end
 
+# @testset "Repeated axis cortical model" begin
+#   # TODO
+# end
