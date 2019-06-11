@@ -60,23 +60,24 @@ function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
   end
   TimeRateFilter(rates,bandonly,axis)
 end
-list_filters()
+list_filters(fir,cr,filter::TimeRateFilter) =
+  ((Axis{axisname(filter)},), rate_filters(fir,cr,axisname(filter)))
 
 function DSP.filt(filter::CorticalFilter,y::MetaAxisArray; progressbar=true, 
                   progress=progressbar ? 
                     cortical_progress(length(filter)) : nothing)
-  @assert all(in(axisnames(y)),(:time,:freq))
-  if any(in(axisnames(filter)),y)
-    ax = first(filter(in(axisnames(filter)),y))
+  @assert all(∈(axisnames(y)),(:time,:freq))
+  if axisname(filter) ∈ y
+    ax = axisname(filter)
     error("Input already has an axis named `$ax`. If you intended ",
           "to add a new dimension, you will have to change the name of the ",
           "axis. When you define the filter you can specify the axis name ",
           "using the `axis` keyword argument.")
   end
 
-  firs = map(ax -> FIRFiltering(y,Axis{ax}),axisnames(filter))
+  fir = FIRFiltering(y,axisname(filter))
   cr = initfilter(y,filter)
-  for (I,H) in enumerate(rate_filters(fir,cr,rates.axis))
+  for (I,H) in list_filters(fir,cr,rates.axis)
     cr[I] = view(apply(fir,H),Base.axes(y)...)
     next!(progress)
   end
@@ -85,7 +86,7 @@ function DSP.filt(filter::CorticalFilter,y::MetaAxisArray; progressbar=true,
 end
 
 # inverse of rates
-struct TimeRateFilterInv
+struct TimeRateFilterInv <: CorticalFilterInv
   rates::TimeRateFilter
   norm::Float64
 end
@@ -94,7 +95,7 @@ Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilterInv(rates,norm)
 list_filters(z_cum,cr,rateinv::TimeRateFilterInv) =
   rate_filters(z_cum,cr,axisname(rateinv),use_conj=true)
 
-function DSP.filt(rateinv::TimeRateFilterInv,cr::MetaAxisArray,progressbar=true)
+function DSP.filt(rateinv::CorticalFilterInv,cr::MetaAxisArray,progressbar=true)
   @assert rateinv.rates.axis in axisnames(cr)
   z_cum = FFTCum(cr,rateinv.rates.axis)
 
@@ -238,9 +239,9 @@ end
 find_fft_dims(y::NTuple{N,Int}) where {N} =
   (nextprod([2,3,5],y[1]),y[2:end-1]...,nextprod([2,3,5],y[end]))
 
-struct FIRFiltering{T,N}
+struct FIRFiltering{T,N,P}
   Y::Array{T,N}
-  plan
+  plan::P
 end
 
 function FIRFiltering(y,axis)
