@@ -35,7 +35,6 @@ const default_rates = sort([-2 .^ (1:0.5:5); 2 .^ (1:0.5:5)]).*Hz
 const default_scales = (2 .^ (-2:0.5:3)).*cycoct
 const spect_rate = 24
 
-# cortical responses of rates 
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
@@ -43,23 +42,6 @@ abstract type CorticalFilter
 end
 abstract type CorticalFilterInv
 end
-
-struct TimeRateFilter <: CorticalFilter
-  data::Vector{typeof(1.0Hz)}
-  bandonly::Bool
-  axis::Symbol
-end
-axisname(x::TimeRateFilter) = x.axis
-Base.length(x::TimeRateFilter) = length(x.data)
-
-function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
-  if axis != :rate && !occursin("rate",string(axis))
-    error("Rate axis name `$axis` must contain the word 'rate'.")
-  end
-  TimeRateFilter(rates,bandonly,axis)
-end
-list_filters(fir,cr,filter::TimeRateFilter) =
-  ((Axis{axisname(filter)},), rate_filters(fir,cr,axisname(filter)))
 
 function DSP.filt(filter::CorticalFilter,y::MetaAxisArray)
   @assert all(∈(axisnames(y)),(:time,:freq))
@@ -80,23 +62,62 @@ function DSP.filt(filter::CorticalFilter,y::MetaAxisArray)
   cr
 end
 
-# inverse of rates
+function DSP.filt(cinv::CorticalFilterInv,cr::MetaAxisArray)
+  z_cum = FFTCum(cr,axisnames(cinv))
+
+  filters = list_filters(z_cum,cr,cinv)
+
+  inner_dims = size(cr)[2:end-1]
+  if length(inner_dims) != ndims(cinv)
+    error("When computing the inverse you must invert all dimensions; partial "*
+      "inverses are not yet supported.")
+  end
+
+  for (I,filter) in filters
+    addfft!(z_cum,cr[:,I,:],filter)
+  end
+  MetaAxisArray(removeaxes(getmeta(cr),axisnames(cinv)...),
+    normalize!(z_cum,cr,cinv.norm))
+end
+
+# rate filters
+struct TimeRateFilter <: CorticalFilter
+  data::Vector{typeof(1.0Hz)}
+  bandonly::Bool
+  axis::Symbol
+end
+axisname(x::TimeRateFilter) = x.axis
+AxisArrays.axisnames(x::TimeRateFilter) = (x.axis,)
+Base.length(x::TimeRateFilter) = length(x.data)
+
+function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
+  if axis != :rate && !occursin("rate",string(axis))
+    error("Rate axis name `$axis` must contain the word 'rate'.")
+  end
+  TimeRateFilter(rates,bandonly,axis)
+end
+list_filters(fir,cr,filter::TimeRateFilter) =
+  ((Axis{axisname(filter)},), rate_filters(fir,cr,axisname(filter)))
+
+# inverse of rate filters
 struct TimeRateFilterInv <: CorticalFilterInv
   rates::TimeRateFilter
   norm::Float64
 end
 axisname(x::TimeRateFilterInv) = axisname(x.rates)
+AxisArrays.axisnames(x::TimeRateFilterInv) = axisnames(x.rates)
 Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilterInv(rates,norm)
 list_filters(z_cum,cr,rateinv::TimeRateFilterInv) =
   rate_filters(z_cum,cr,axisname(rateinv),use_conj=true)
 
-# cortical responses of scales
+# scale filters
 struct FreqScaleFilter <: CorticalFilter
   data::Vector{typeof(1.0cycoct)}
   bandonly::Bool
   axis::Symbol
 end
 axisname(x::FreqScaleFilter) = x.axis
+AxisArrays.axisnames(x::FreqScaleFilter) = (x.axis,)
 list_filters(fir,cs,scales::FreqScaleFilter) = 
   ((Axis{axisname(scales)}(i), [HS; zero(HS)]') 
    for (i,HS) in scale_filters(fir,cs,axisname(scales)))
@@ -108,12 +129,13 @@ function scalefilter(scales=default_scales;bandonly=true,axis=:scale)
   FreqScaleFilter(scales,bandonly,axis)
 end
 
-# inverse of scales
+# inverse of scale filters
 struct FreqScaleFilterInv
   scales::FreqScaleFilter
   norm::Float64
 end
 axisname(x::FreqScaleFilterInv) = axisname(x.scales)
+AxisArrays.axisnames(x::FreqScaleFilterInv) = (axisname(x.scales),)
 Base.inv(scales::FreqScaleFilter;norm=0.9) = FreqScaleFilterInv(scales,norm)
 list_filters(z_cum,cr,scaleinv::FreqScaleFilterInv) =
   scale_filters(z_cum,cr,axisname(scaleinv))
@@ -138,31 +160,16 @@ function DSP.filt(composed::ScaleRateFilter,cr::MetaAxisArray,progresbar=true)
   cr
 end
 
+# inverse of scale-rate filters
 struct CorticalFilterInv
   scales::FreqScaleFilterInv
   rates::TimeRateFilterInv
+  norm::Float64
 end
-Base.inv(cf::ScaleRateFilter) = CorticalFilterInv(inv(cf.scales),inv(cf.rates))
+Base.inv(cf::ScaleRateFilter;norm=0.9) =
+  CorticalFilterInv(inv(cf.scales),inv(cf.rates),norm)
 AxisArrays.axisnames(x::CorticalFilterInv) =
   (axisname(x.scales),axisname(x.rates))
-
-function DSP.filt(cinv::CorticalFilterInv,cr::MetaAxisArray)
-  z_cum = FFTCum(cr,axisnames(cinv))
-
-  filters = list_filters(z_cum,cr,cinv)
-
-  inner_dims = size(cr)[2:end-1]
-  if length(inner_dims) != length(compinv.c.data)
-    error("When computing the inverse you must invert all dimensions; partial "*
-      "inverses are not yet supported.")
-  end
-
-  for (I,filter) in filters
-    addfft!(z_cum,cr[:,I,:],filter)
-  end
-  MetaAxisArray(removeaxes(getmeta(cr),axisnames(cinv)...),
-    normalize!(z_cum))
-end
 
 function list_filters(z_cum,cr,cf::CorticalFilterInv)
   (CartesianIndex(i,j), HR.*[HS; zero(HS)]' 
