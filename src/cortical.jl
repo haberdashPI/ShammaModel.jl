@@ -333,12 +333,11 @@ function addfft!(x::FFTCum,cr,h)
   @assert x.nfrequencies == nfrequencies(cr)
   @assert x.ntimes == ntimes(cr)
 
-  for I in CartesianIndices(size(x)[2:end-1])
-    x.z[1:ntimes(cr),1:nfrequencies(cr)] = cr[1:ntimes(cr),I,1:nfrequencies(cr)]
-    Z = x.plan * x.z
-    x.h_cum[:,I,:] .+= abs2.(h)
-    x.z_cum[:,I,:] .+= h .* Z
-  end
+  x.z[1:ntimes(cr),1:nfrequencies(cr)] = cr[1:ntimes(cr),1:nfrequencies(cr)]
+  Z = x.plan * x.z
+  x.h_cum .+= abs2.(h)
+  x.z_cum .+= h .* Z
+
   x
 end
 
