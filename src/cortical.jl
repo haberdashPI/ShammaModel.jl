@@ -97,7 +97,8 @@ function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
   TimeRateFilter(rates,bandonly,axis)
 end
 list_filters(fir,cr,filter::TimeRateFilter) =
-  ((Axis{axisname(filter)},), rate_filters(fir,cr,axisname(filter)))
+  ((Axis{axisname(filter)}(i), HR)
+   for (i,HR) in enumerate(rate_filters(fir,cr,axisname(filter))))
 
 # inverse of rate filters
 struct TimeRateFilterInv <: CorticalFilterInv
@@ -108,7 +109,8 @@ axisname(x::TimeRateFilterInv) = axisname(x.rates)
 AxisArrays.axisnames(x::TimeRateFilterInv) = axisnames(x.rates)
 Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilterInv(rates,norm)
 list_filters(z_cum,cr,rateinv::TimeRateFilterInv) =
-  rate_filters(z_cum,cr,axisname(rateinv),use_conj=true)
+  ((Axis{axisname(filter)}(i), HR)
+   for (i,HR) in enumerate(rate_filters(z_cum,cr,axisname(rateinv),use_conj=true)))
 
 # scale filters
 struct FreqScaleFilter <: CorticalFilter
@@ -138,7 +140,7 @@ axisname(x::FreqScaleFilterInv) = axisname(x.scales)
 AxisArrays.axisnames(x::FreqScaleFilterInv) = (axisname(x.scales),)
 Base.inv(scales::FreqScaleFilter;norm=0.9) = FreqScaleFilterInv(scales,norm)
 list_filters(z_cum,cr,scaleinv::FreqScaleFilterInv) =
-  scale_filters(z_cum,cr,axisname(scaleinv))
+  list_filters(z_cum,cr,scaleinv.scales)
 
 # combination of both scales and rates
 struct ScaleRateFilter
