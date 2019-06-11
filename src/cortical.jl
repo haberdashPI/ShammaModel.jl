@@ -23,8 +23,6 @@ struct RateAxis
   high::typeof(1.0Hz)
 end
 
-cortical_progress(n) = Progress(desc="Cortical Model: ",n)
-
 rates(x::MetaUnion{AxisArray}) =
   axisvalues(AxisArrays.axes(x,Axis{:rate}))[1]
 nrates(x) = length(rates(x))
@@ -63,9 +61,7 @@ end
 list_filters(fir,cr,filter::TimeRateFilter) =
   ((Axis{axisname(filter)},), rate_filters(fir,cr,axisname(filter)))
 
-function DSP.filt(filter::CorticalFilter,y::MetaAxisArray; progressbar=true, 
-                  progress=progressbar ? 
-                    cortical_progress(length(filter)) : nothing)
+function DSP.filt(filter::CorticalFilter,y::MetaAxisArray)
   @assert all(∈(axisnames(y)),(:time,:freq))
   if axisname(filter) ∈ y
     ax = axisname(filter)
@@ -79,7 +75,6 @@ function DSP.filt(filter::CorticalFilter,y::MetaAxisArray; progressbar=true,
   cr = initfilter(y,filter)
   for (I,H) in list_filters(fir,cr,rates.axis)
     cr[I] = view(apply(fir,H),Base.axes(y)...)
-    next!(progress)
   end
 
   cr
@@ -95,28 +90,16 @@ Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilterInv(rates,norm)
 list_filters(z_cum,cr,rateinv::TimeRateFilterInv) =
   rate_filters(z_cum,cr,axisname(rateinv),use_conj=true)
 
-function DSP.filt(rateinv::CorticalFilterInv,cr::MetaAxisArray,progressbar=true)
-  @assert rateinv.rates.axis in axisnames(cr)
-  z_cum = FFTCum(cr,rateinv.rates.axis)
-
-  progress = progressbar ? cortical_progress(nrates(cr)) : nothing
-  for (ri,HR) in enumerate(rate_filters(z_cum,cr,rateinv.rates.axis,use_conj=true))
-    addfft!(z_cum,cr[Axis{rateinv.rates.axis}(ri)],HR)
-    next!(progress)
-  end
-
-  MetaAxisArray(removeaxes(getmeta(cr),rateinv.rates.axis),
-    normalize!(z_cum,cr,rateinv.norm))
-end
-
 # cortical responses of scales
-vecperm(x::AbstractVector,n) = reshape(x,fill(1,n-1)...,:)
 struct FreqScaleFilter <: CorticalFilter
   data::Vector{typeof(1.0cycoct)}
   bandonly::Bool
   axis::Symbol
 end
 axisname(x::FreqScaleFilter) = x.axis
+list_filters(fir,cs,scales::FreqScaleFilter) = 
+  ((Axis{axisname(scales)}(i), [HS; zero(HS)]') 
+   for (i,HS) in scale_filters(fir,cs,axisname(scales)))
 
 function scalefilter(scales=default_scales;bandonly=true,axis=:scale)
   if axis != :scale && !occursin("scale",string(axis))
@@ -125,31 +108,7 @@ function scalefilter(scales=default_scales;bandonly=true,axis=:scale)
   FreqScaleFilter(scales,bandonly,axis)
 end
 
-function DSP.filt(scales::FreqScaleFilter,y::MetaAxisArray; progressbar=true, 
-                   progress=progressbar ? 
-                     cortical_progress(length(scales.data)) : nothing)
-  @assert :freq in axisnames(y)
-
-  if scales.axis in axisnames(y)
-    error("Input already has an axis named `$(scales.axis)`. If you intended ",
-          "to add a second rate dimension, change the `axis` keyword argument ",
-          "of `scalefilter` to a different value to create a second rate axis.")
-  end
-
-  fir = FIRFiltering(y,Axis{:freq})
-
-  cs = initscales(y,scales)
-  for (si,HS) in enumerate(scale_filters(fir,cs,scales.axis))
-    z = apply(fir,conj.(vecperm([HS; zero(HS)],ndims(y))))
-    cs[Axis{scales.axis}(si)] = view(z,Base.axes(y)...)
-    next!(progress)
-  end
-
-  cs
-end
-
 # inverse of scales
-
 struct FreqScaleFilterInv
   scales::FreqScaleFilter
   norm::Float64
@@ -159,20 +118,7 @@ Base.inv(scales::FreqScaleFilter;norm=0.9) = FreqScaleFilterInv(scales,norm)
 list_filters(z_cum,cr,scaleinv::FreqScaleFilterInv) =
   scale_filters(z_cum,cr,axisname(scaleinv))
 
-function DSP.filt(scaleinv::FreqScaleFilterInv,cr::MetaAxisArray,progressbar=true)
-  @assert axisname(scales) in axisnames(cr)
- 
-  z_cum = FFTCum(cr,axisnames(scaleinv))
-
-  progress = progressbar ? cortical_progress(nscales(cr)) : nothing
-  for (si,HS) in enumerate(list_filters(z_cum,cr,scaleinv))
-    addfft!(z_cum,cr[Axis{axisname(scaleinv)}(si)],[HS; zero(HS)]')
-    next!(progress)
-  end
-  MetaAxisArray(removeaxes(getmeta(cr),axisname(scaleinv)),
-    normalize!(z_cum,cr,scaleinv.norm))
-end
-
+# combination of both scales and rates
 struct ScaleRateFilter
   scales::FreqScaleFilter
   rates::TimeRateFilter
@@ -187,10 +133,8 @@ end
 cortical(scales::FreqScaleFilter,rates::TimeRateFilter) = 
   ScaleRateFilter(scales,rates)
 
-function DSP.filt(composed::ComposedFilter,cr::MetaAxisArray,progresbar=true)
-  for filter in composed.data
-    cr = filt(filter,cr,progressbar)
-  end
+function DSP.filt(composed::ScaleRateFilter,cr::MetaAxisArray,progresbar=true)
+  filter(composed.rates,filter(composed.scales,cr))
   cr
 end
 
@@ -202,11 +146,10 @@ Base.inv(cf::ScaleRateFilter) = CorticalFilterInv(inv(cf.scales),inv(cf.rates))
 AxisArrays.axisnames(x::CorticalFilterInv) =
   (axisname(x.scales),axisname(x.rates))
 
-function DSP.filt(cinv::CorticalFilterInv,cr::MetaAxisArray,progressbar=true)
+function DSP.filt(cinv::CorticalFilterInv,cr::MetaAxisArray)
   z_cum = FFTCum(cr,axisnames(cinv))
 
   filters = list_filters(z_cum,cr,cinv)
-  progress = progressbar ?  cortical_progress(length(filters)) : nothing
 
   inner_dims = size(cr)[2:end-1]
   if length(inner_dims) != length(compinv.c.data)
@@ -214,11 +157,10 @@ function DSP.filt(cinv::CorticalFilterInv,cr::MetaAxisArray,progressbar=true)
       "inverses are not yet supported.")
   end
 
-  for (I,filter) in zip(CartesianIndices(inner_dims),filters)
+  for (I,filter) in filters
     addfft!(z_cum,cr[:,I,:],filter)
-    next!(progress)
   end
-  MetaAxisArray(removeaxes(getmeta(cr),axisname.(compinv.c.data)...),
+  MetaAxisArray(removeaxes(getmeta(cr),axisnames(cinv)...),
     normalize!(z_cum))
 end
 
