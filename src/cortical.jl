@@ -43,6 +43,8 @@ ascycoct(x::Quantity) = uconvert(cycoct,x)
 
 abstract type CorticalFilter
 end
+abstract type CorticalFilterInv
+end
 
 struct TimeRateFilter <: CorticalFilter
   data::Vector{typeof(1.0Hz)}
@@ -50,6 +52,7 @@ struct TimeRateFilter <: CorticalFilter
   axis::Symbol
 end
 axisname(x::TimeRateFilter) = x.axis
+Base.length(x::TimeRateFilter) = length(x.data)
 
 function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
   if axis != :rate && !occursin("rate",string(axis))
@@ -57,21 +60,24 @@ function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
   end
   TimeRateFilter(rates,bandonly,axis)
 end
+list_filters()
 
-function DSP.filt(rates::TimeRateFilter,y::MetaAxisArray; progressbar=true, 
+function DSP.filt(filter::CorticalFilter,y::MetaAxisArray; progressbar=true, 
                   progress=progressbar ? 
-                    cortical_progress(length(rates.data)) : nothing)
-  @assert :time in axisnames(y)
-  if rates.axis in axisnames(y)
-    error("Input already has an axis named `$(rates.axis)`. If you intended ",
-          "to add a second rate dimension, change the `axis` keyword argument ",
-          "of `ratefilter` to a different value to create a second rate axis.")
+                    cortical_progress(length(filter)) : nothing)
+  @assert all(in(axisnames(y)),(:time,:freq))
+  if any(in(axisnames(filter)),y)
+    ax = first(filter(in(axisnames(filter)),y))
+    error("Input already has an axis named `$ax`. If you intended ",
+          "to add a new dimension, you will have to change the name of the ",
+          "axis. When you define the filter you can specify the axis name ",
+          "using the `axis` keyword argument.")
   end
 
-  fir = FIRFiltering(y,Axis{:time})
-  cr = initrates(y,rates)
-  for (ri,HR) in enumerate(rate_filters(fir,cr,rates.axis))
-    cr[Axis{rates.axis}(ri)] = view(apply(fir,HR),Base.axes(y)...)
+  firs = map(ax -> FIRFiltering(y,Axis{ax}),axisnames(filter))
+  cr = initfilter(y,filter)
+  for (I,H) in enumerate(rate_filters(fir,cr,rates.axis))
+    cr[I] = view(apply(fir,H),Base.axes(y)...)
     next!(progress)
   end
 
@@ -153,9 +159,9 @@ list_filters(z_cum,cr,scaleinv::FreqScaleFilterInv) =
   scale_filters(z_cum,cr,axisname(scaleinv))
 
 function DSP.filt(scaleinv::FreqScaleFilterInv,cr::MetaAxisArray,progressbar=true)
-  @assert scaleinv.scales.axis in axisnames(cr)
+  @assert axisname(scales) in axisnames(cr)
  
-  z_cum = FFTCum(cr,axisname(scaleinv))
+  z_cum = FFTCum(cr,axisnames(scaleinv))
 
   progress = progressbar ? cortical_progress(nscales(cr)) : nothing
   for (si,HS) in enumerate(list_filters(z_cum,cr,scaleinv))
@@ -166,14 +172,19 @@ function DSP.filt(scaleinv::FreqScaleFilterInv,cr::MetaAxisArray,progressbar=tru
     normalize!(z_cum,cr,scaleinv.norm))
 end
 
-struct ComposedFilter{T} <: CorticalFilter
-  data::T
+struct ScaleRateFilter
+  scales::FreqScaleFilter
+  rates::TimeRateFilter
 end
-totuple(x::CorticalFilter) = (x,)
-totuple(x::ComposedFilter) = x.data
-import Base: ∘
-∘(x::CorticalFilter,y::CorticalFilter) = (totuple(x)...,totuple(y)...)
-compose(x::CorticalFilter,y::CorticalFilter) = x ∘ y
+
+function cortical(scales=default_scales,rates=default_rates;bandonly=true,
+    axes=(:scale,:rate))
+
+    ScaleRateFilter(scalefilter(scales,bandonly=bandonly,axis=axes[1]),
+                    ratefilter(rates,bandonly=bandonly,axis=axes[2]))
+end
+cortical(scales::FreqScaleFilter,rates::TimeRateFilter) = 
+  ScaleRateFilter(scales,rates)
 
 function DSP.filt(composed::ComposedFilter,cr::MetaAxisArray,progresbar=true)
   for filter in composed.data
@@ -182,15 +193,18 @@ function DSP.filt(composed::ComposedFilter,cr::MetaAxisArray,progresbar=true)
   cr
 end
 
-struct ComposedFilterInv{T} <: CorticalFilter
-  c::ComposedFilter{T}
+struct CorticalFilterInv
+  scales::FreqScaleFilterInv
+  rates::TimeRateFilterInv
 end
-Base.inv(cf::ComposedFilter) = ComposedFilterInv(cf)
+Base.inv(cf::ScaleRateFilter) = CorticalFilterInv(inv(cf.scales),inv(cf.rates))
+AxisArrays.axisnames(x::CorticalFilterInv) =
+  (axisname(x.scales),axisname(x.rates))
 
-function DSP.filt(compinv::ComposedFilterInv,cr::MetaAxisArray,progressbar=true)
-  z_cum = FFTCum(cr,axisname.(compinv.c.data))
+function DSP.filt(cinv::CorticalFilterInv,cr::MetaAxisArray,progressbar=true)
+  z_cum = FFTCum(cr,axisnames(cinv))
 
-  filters = list_filters(z_cum,cr,compinv.c)
+  filters = list_filters(z_cum,cr,cinv)
   progress = progressbar ?  cortical_progress(length(filters)) : nothing
 
   inner_dims = size(cr)[2:end-1]
@@ -207,17 +221,10 @@ function DSP.filt(compinv::ComposedFilterInv,cr::MetaAxisArray,progressbar=true)
     normalize!(z_cum))
 end
 
-function list_filters(z_cum,cr,cf::ComposedFilterInv)
-  filters = nothing
-  tupleappend(tuple::Tuple,x) = (tuple...,x)
-  tupleappend(x,y) = (x,y)
-  by(::Nothing,x,i) = x
-  by(x,y,i) = tupleappend.(x,vecperm(y,i))
-
-  for (i,Hs) in enumerate(cf.c.data)
-    filters = by(filters,Hs,i)
-  end
-  filters
+function list_filters(z_cum,cr,cf::CorticalFilterInv)
+  (CartesianIndex(i,j), HR.*[HS; zero(HS)]' 
+   for (i,HR) in list_filters(z_cum,cr,cf.rates)
+   for (j,HS) in list_filters(z_cum,cr,cf.scales))
 end
 
 ################################################################################
@@ -253,9 +260,12 @@ apply(fir::FIRFiltering,H) = fir.plan * (fir.Y .* H)
 Base.size(x::FIRFiltering,i...) = size(x.Y,i...)
 Base.ndims(x::FIRFiltering) = ndims(x.Y)
 
-initrates(y,rates::TimeRateFilter) = 
-  initrates(y,rates.data,rates.axis,rates.bandonly)
-function initrates(y,rates,rateax=:rate,bandonly=false)
+initfilter(y,cortical::ScaleRateFilter) = 
+  initfilter(y,cortical.rates,initfilter(y,cortical.scales))
+
+initfilter(y,rates::TimeRateFilter) = 
+  initfilter(y,rates.data,rates.axis,rates.bandonly)
+function initfilter(y,rates::TimeRateFilter,rateax=:rate,bandonly=false)
   rates = sort(rates)
   r = Axis{rateax}(rates)
   ax = AxisArrays.axes(y)
@@ -269,9 +279,9 @@ function initrates(y,rates,rateax=:rate,bandonly=false)
   MetaAxisArray(axis_meta,axar)
 end
 
-initscales(y,scales::FreqScaleFilter) = 
-  initscales(y,scales.data,scales.axis,scales.bandonly)
-function initscales(y,scales,scaleax=:scale,bandonly=false)
+initfilter(y,scales::FreqScaleFilter) = 
+  initfilter(y,scales.data,scales.axis,scales.bandonly)
+function initfilter(y,scales::FreqScaleFilter,scaleax=:scale,bandonly=false)
   scales = sort(scales)
   s = Axis{scaleax}(scales)
   ax = AxisArrays.axes(y)
@@ -309,21 +319,18 @@ function withoutdim(dims,without)
   dims[1:without-1]...,dims[without+1:end]...
 end
 
-function FFTCum(cr::MetaAxisArray,withoutax)
-  withoutd = axisdim(cr,Axis{withoutax})
-  dims = find_fft_dims((size(cr)[[1,end]]))
+function FFTCum(cr::MetaAxisArray,withoutaxes)
+  dims = find_fft_dims((size(cr,1),size(cr,ndims(cr))))
   mult = fill(ndims(cr),1)
-  mult[1] += startswith(string(withoutax),"scale")
-  mult[end] += startswith(string(withoutax),"rate")
+  mult[1] += any(ax -> startswith(string(ax),"scale"),withoutaxes)
+  mult[end] += any(ax -> startswith(string(ax),"rate"),withoutaxes)
   z = zeros(eltype(cr),(dims .* mult)...)
 
-  newaxes = withoutdim(AxisArrays.axes(cr),withoutd)
-  cumsize = (size(z,1),withoutdim(size(cr),withoutd)[2:end-1]...,size(z,2))
-
+  cumsize = (size(z,1),size(z,2))
   z_cum = zeros(eltype(z),cumsize)
   h_cum = zeros(real(eltype(z)),cumsize)
   plan = plan_fft(z)
-  FFTCum(z,z_cum,h_cum,nfrequencies(cr),ntimes(cr),plan,newaxes)
+  FFTCum(z,z_cum,h_cum,nfrequencies(cr),ntimes(cr),plan)
 end
 
 Base.size(x::FFTCum,i...) = size(x.z_cum,i...)
@@ -342,23 +349,14 @@ function addfft!(x::FFTCum,cr,h)
 end
 
 function normalize!(x::FFTCum,cr,norm)
-  inner_dims = size(x)[2:end-1]
-  result = similar(cr,real(eltype(cr)),ntimes(cr),inner_dims...,nfrequencies(cr))
-  for I in CartesianIndices(inner_dims)
-    h_cum = x.h_cum[:,I,:]
-    z_cum = x.z_cum[:,I,:]
+  x.h_cum[:,1] .*= 2
+  old_sum = sum(x.h_cum[:,nfrequencies(cr)])
+  x.h_cum .= norm.*x.h_cum .+ (1 .- norm).*maximum(x.h_cum)
+  x.h_cum .*= old_sum ./ sum(view(x.h_cum,:,nfrequencies(cr)))
+  x.z_cum ./= x.h_cum
 
-    h_cum[:,1] .*= 2 # norm DC component
-    old_sum = sum(h_cum)
-    h_cum .= norm.*h_cum .+ (1 .- norm).*maximum(h_cum)
-    h_cum .*= old_sum ./ sum(h_cum)
-    z_cum ./= h_cum
-
-    spectc = view((x.plan \ z_cum),1:ntimes(cr),1:nfrequencies(cr))
-    result[:,I,:] .= max.(real.(2 .* spectc),0)
-  end
-
-  AxisArray(result,x.axes...)
+  spectc = view((x.plan \ x.z_cum),1:ntimes(cr),1:nfrequencies(cr))
+  max.(real.(2 .* spectc),0)
 end
 
 pad(x,lens) = pad(x,lens...)
