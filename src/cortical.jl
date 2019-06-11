@@ -53,9 +53,9 @@ function DSP.filt(filter::CorticalFilter,y::MetaAxisArray)
           "using the `axis` keyword argument.")
   end
 
-  fir = FIRFiltering(y,axisname(filter))
+  fir = FIRFiltering(y,Axis{fromaxis(filter)})
   cr = initfilter(y,filter)
-  for (I,H) in list_filters(fir,cr,rates.axis)
+  for (I,H) in list_filters(fir,cr,filter)
     cr[I] = view(apply(fir,H),Base.axes(y)...)
   end
 
@@ -87,6 +87,7 @@ struct TimeRateFilter <: CorticalFilter
   axis::Symbol
 end
 axisname(x::TimeRateFilter) = x.axis
+fromaxis(x::TimeRateFilter) = :time
 AxisArrays.axisnames(x::TimeRateFilter) = (x.axis,)
 Base.length(x::TimeRateFilter) = length(x.data)
 
@@ -119,6 +120,7 @@ struct FreqScaleFilter <: CorticalFilter
   axis::Symbol
 end
 axisname(x::FreqScaleFilter) = x.axis
+fromaxis(x::FreqScaleFilter) = :freq
 AxisArrays.axisnames(x::FreqScaleFilter) = (x.axis,)
 list_filters(fir,cs,scales::FreqScaleFilter) = 
   ((Axis{axisname(scales)}(i), [HS; zero(HS)]') 
@@ -132,7 +134,7 @@ function scalefilter(scales=default_scales;bandonly=true,axis=:scale)
 end
 
 # inverse of scale filters
-struct FreqScaleFilterInv
+struct FreqScaleFilterInv <: CorticalFilterInv
   scales::FreqScaleFilter
   norm::Float64
 end
@@ -143,7 +145,7 @@ list_filters(z_cum,cr,scaleinv::FreqScaleFilterInv) =
   list_filters(z_cum,cr,scaleinv.scales)
 
 # combination of both scales and rates
-struct ScaleRateFilter
+struct ScaleRateFilter <: CorticalFilter
   scales::FreqScaleFilter
   rates::TimeRateFilter
 end
@@ -163,17 +165,17 @@ function DSP.filt(composed::ScaleRateFilter,cr::MetaAxisArray,progresbar=true)
 end
 
 # inverse of scale-rate filters
-struct CorticalFilterInv
+struct ScaleRateFilterInv <: CorticalFilterInv
   scales::FreqScaleFilterInv
   rates::TimeRateFilterInv
   norm::Float64
 end
 Base.inv(cf::ScaleRateFilter;norm=0.9) =
-  CorticalFilterInv(inv(cf.scales),inv(cf.rates),norm)
-AxisArrays.axisnames(x::CorticalFilterInv) =
+  ScaleRateFilterInv(inv(cf.scales),inv(cf.rates),norm)
+AxisArrays.axisnames(x::ScaleRateFilterInv) =
   (axisname(x.scales),axisname(x.rates))
 
-function list_filters(z_cum,cr,cf::CorticalFilterInv)
+function list_filters(z_cum,cr,cf::ScaleRateFilterInv)
   (CartesianIndex(i,j), HR.*[HS; zero(HS)]' 
    for (i,HR) in list_filters(z_cum,cr,cf.rates)
    for (j,HS) in list_filters(z_cum,cr,cf.scales))
@@ -212,14 +214,10 @@ apply(fir::FIRFiltering,H) = fir.plan * (fir.Y .* H)
 Base.size(x::FIRFiltering,i...) = size(x.Y,i...)
 Base.ndims(x::FIRFiltering) = ndims(x.Y)
 
-initfilter(y,cortical::ScaleRateFilter) = 
-  initfilter(y,cortical.rates,initfilter(y,cortical.scales))
-
-initfilter(y,rates::TimeRateFilter) = 
-  initfilter(y,rates.data,rates.axis,rates.bandonly)
-function initfilter(y,rates::TimeRateFilter,rateax=:rate,bandonly=false)
-  rates = sort(rates)
-  r = Axis{rateax}(rates)
+function initfilter(y,ratefilter::TimeRateFilter)
+  bandonly = ratefilter.bandonly
+  rates = sort(ratefilter.data)
+  r = Axis{axisname(ratefilter)}(rates)
   ax = AxisArrays.axes(y)
   newax = ax[1],r,ax[2:end]...
 
@@ -227,15 +225,14 @@ function initfilter(y,rates::TimeRateFilter,rateax=:rate,bandonly=false)
   arates = sort!(unique!(abs.(rates)))
   rate_axis = bandonly ? 
      RateAxis(-Inf*Hz,Inf*Hz) : RateAxis(first(arates),last(arates))
-  axis_meta = addaxes(getmeta(y);Dict(rateax => rate_axis)...)
+  axis_meta = addaxes(getmeta(y);Dict(axisname(ratefilter) => rate_axis)...)
   MetaAxisArray(axis_meta,axar)
 end
 
-initfilter(y,scales::FreqScaleFilter) = 
-  initfilter(y,scales.data,scales.axis,scales.bandonly)
-function initfilter(y,scales::FreqScaleFilter,scaleax=:scale,bandonly=false)
-  scales = sort(scales)
-  s = Axis{scaleax}(scales)
+function initfilter(y,scalefilter::FreqScaleFilter)
+  bandonly = scalefilter.bandonly
+  scales = sort(scalefilter.data)
+  s = Axis{axisname(scalefilter)}(scales)
   ax = AxisArrays.axes(y)
   newax = ax[1:end-1]...,s,ax[end]
 
@@ -243,7 +240,7 @@ function initfilter(y,scales::FreqScaleFilter,scaleax=:scale,bandonly=false)
   scale_axis = bandonly ? 
     ScaleAxis(-Inf*cycoct,Inf*cycoct) :
     ScaleAxis(first(scales),last(scales))
-  axis_meta = addaxes(getmeta(y);Dict(scaleax => scale_axis)...)
+  axis_meta = addaxes(getmeta(y);Dict(axisname(scalefilter) => scale_axis)...)
   MetaAxisArray(axis_meta,axar)
 end
 
