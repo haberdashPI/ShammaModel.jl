@@ -74,6 +74,8 @@ function Base.show(io::IO,mime::MIME"text/plain",x::MetaAxisArray)
         @warn "Ignoring phase in display of complex values."
         x = real.(abs.(x))
       end
+      lo,hi = extrema(x)
+      x .= (x .- lo) ./ (hi - lo)
       if ndims(x) == 2
         image = reverse(Gray.(getcontents(x)),dims=2)'
       else
