@@ -70,8 +70,15 @@ function Base.show(io::IO,mime::MIME"text/plain",x::MetaAxisArray)
     end
     describe_axes(io,x)
     if ndims(x) <= 2
-      lo,hi = extrema(x)
-      image = reverse(Gray.((getcontents(x) .- lo)./ (hi - lo)),dims=2)'
+      if eltype(x) <: Complex
+        @warn "Ignoring phase in display of complex values."
+        x = real.(abs.(x))
+      end
+      if ndims(x) == 2
+        image = reverse(Gray.(getcontents(x)),dims=2)'
+      else
+        image = Gray.(getcontents(x))
+      end
       ImageInTerminal.imshow(io,image,ImageInTerminal.colormode[1])
     end
   end
