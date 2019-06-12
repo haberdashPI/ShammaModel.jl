@@ -69,15 +69,17 @@ function DSP.filt(cinv::CorticalFilterInv,cr::MetaAxisArray)
 
   inner_dims = size(cr)[2:end-1]
   if length(inner_dims) != ndims(cinv)
-    error("When computing the inverse you must invert all dimensions; partial "*
-      "inverses are not yet supported.")
+    error("When computing the inverse you must invert all scale/rate "*
+          "dimensions; partial inverses are not supported.")
   end
 
   for (I,filter) in filters
-    addfft!(z_cum,cr[:,I,:],filter)
+    addfft!(z_cum,view(cr,:,I,:),filter)
   end
-  MetaAxisArray(removeaxes(getmeta(cr),axisnames(cinv)...),
-    normalize!(z_cum,cr,cinv.norm))
+
+  removed = removeaxes(getmeta(cr),axisnames(cinv)...)
+  norm = normalize!(z_cum,cr,cinv.norm)
+  MetaAxisArray(removed,AxisArray(norm,AxisArrays.axes(cr)[[1,end]]))
 end
 
 # rate filters
@@ -91,7 +93,7 @@ fromaxis(x::TimeRateFilter) = :time
 AxisArrays.axisnames(x::TimeRateFilter) = (x.axis,)
 Base.length(x::TimeRateFilter) = length(x.data)
 
-function ratefilter(rates=default_rates;bandonly=true,axis=:rate)
+function ratefilter(rates=default_rates;bandonly=false,axis=:rate)
   if axis != :rate && !occursin("rate",string(axis))
     error("Rate axis name `$axis` must contain the word 'rate'.")
   end
@@ -106,11 +108,12 @@ struct TimeRateFilterInv <: CorticalFilterInv
   rates::TimeRateFilter
   norm::Float64
 end
+Base.ndims(x::TimeRateFilterInv) = 1
 axisname(x::TimeRateFilterInv) = axisname(x.rates)
 AxisArrays.axisnames(x::TimeRateFilterInv) = axisnames(x.rates)
 Base.inv(rates::TimeRateFilter;norm=0.9) = TimeRateFilterInv(rates,norm)
 list_filters(z_cum,cr,rateinv::TimeRateFilterInv) =
-  ((Axis{axisname(filter)}(i), HR)
+  ((i, HR)
    for (i,HR) in enumerate(rate_filters(z_cum,cr,axisname(rateinv),use_conj=true)))
 
 # scale filters
@@ -124,9 +127,9 @@ fromaxis(x::FreqScaleFilter) = :freq
 AxisArrays.axisnames(x::FreqScaleFilter) = (x.axis,)
 list_filters(fir,cs,scales::FreqScaleFilter) = 
   ((Axis{axisname(scales)}(i), [HS; zero(HS)]') 
-   for (i,HS) in scale_filters(fir,cs,axisname(scales)))
+   for (i,HS) in enumerate(scale_filters(fir,cs,axisname(scales))))
 
-function scalefilter(scales=default_scales;bandonly=true,axis=:scale)
+function scalefilter(scales=default_scales;bandonly=false,axis=:scale)
   if axis != :scale && !occursin("scale",string(axis))
     error("Scale axis name `$axis` must contain the word 'scale'.")
   end
@@ -138,11 +141,13 @@ struct FreqScaleFilterInv <: CorticalFilterInv
   scales::FreqScaleFilter
   norm::Float64
 end
+Base.ndims(x::FreqScaleFilterInv) = 1
 axisname(x::FreqScaleFilterInv) = axisname(x.scales)
 AxisArrays.axisnames(x::FreqScaleFilterInv) = (axisname(x.scales),)
 Base.inv(scales::FreqScaleFilter;norm=0.9) = FreqScaleFilterInv(scales,norm)
 list_filters(z_cum,cr,scaleinv::FreqScaleFilterInv) =
-  list_filters(z_cum,cr,scaleinv.scales)
+  ((i, [HS; zero(HS)]') 
+   for (i,HS) in enumerate(scale_filters(z_cum,cr,axisname(scaleinv))))
 
 # combination of both scales and rates
 struct ScaleRateFilter <: CorticalFilter
@@ -150,7 +155,7 @@ struct ScaleRateFilter <: CorticalFilter
   rates::TimeRateFilter
 end
 
-function cortical(scales=default_scales,rates=default_rates;bandonly=true,
+function cortical(scales=default_scales,rates=default_rates;bandonly=false,
     axes=(:scale,:rate))
 
     ScaleRateFilter(scalefilter(scales,bandonly=bandonly,axis=axes[1]),
@@ -159,9 +164,8 @@ end
 cortical(scales::FreqScaleFilter,rates::TimeRateFilter) = 
   ScaleRateFilter(scales,rates)
 
-function DSP.filt(composed::ScaleRateFilter,cr::MetaAxisArray,progresbar=true)
-  filter(composed.rates,filter(composed.scales,cr))
-  cr
+function DSP.filt(cort::ScaleRateFilter,cr::MetaAxisArray,progresbar=true)
+  filt(cort.rates,filt(cort.scales,cr))
 end
 
 # inverse of scale-rate filters
@@ -170,13 +174,14 @@ struct ScaleRateFilterInv <: CorticalFilterInv
   rates::TimeRateFilterInv
   norm::Float64
 end
+Base.ndims(x::ScaleRateFilterInv) = 2
 Base.inv(cf::ScaleRateFilter;norm=0.9) =
   ScaleRateFilterInv(inv(cf.scales),inv(cf.rates),norm)
 AxisArrays.axisnames(x::ScaleRateFilterInv) =
   (axisname(x.scales),axisname(x.rates))
 
 function list_filters(z_cum,cr,cf::ScaleRateFilterInv)
-  (CartesianIndex(i,j), HR.*[HS; zero(HS)]' 
+  ((CartesianIndex(i,j), HR.*HS)
    for (i,HR) in list_filters(z_cum,cr,cf.rates)
    for (j,HS) in list_filters(z_cum,cr,cf.scales))
 end
@@ -252,14 +257,13 @@ reshape_for(v::Array{T,3},cr::AxisArray{T,4}) where T =
 
 # keeps track of cumulative sum of FIR filters
 # in frequency-space so we can readily normalize the result.
-struct FFTCum{T,P,N,M,Ax}
+struct FFTCum{T,P,N,M}
   z::Array{Complex{T},N}
   z_cum::Array{Complex{T},M}
   h_cum::Array{T,M}
   nfrequencies::Int
   ntimes::Int
   plan::P
-  axes::Ax
 end
 
 # TODO: working on generalizing FFTCum to working
@@ -286,10 +290,10 @@ Base.size(x::FFTCum,i...) = size(x.z_cum,i...)
 Base.ndims(x::FFTCum) = ndims(x.z_cum)
 
 function addfft!(x::FFTCum,cr,h)
-  @assert x.nfrequencies == nfrequencies(cr)
-  @assert x.ntimes == ntimes(cr)
+  @assert x.ntimes == size(cr,1)
+  @assert x.nfrequencies == size(cr,2)
 
-  x.z[1:ntimes(cr),1:nfrequencies(cr)] = cr[1:ntimes(cr),1:nfrequencies(cr)]
+  x.z[1:x.ntimes,1:x.nfrequencies] = cr
   Z = x.plan * x.z
   x.h_cum .+= abs2.(h)
   x.z_cum .+= h .* Z

@@ -39,16 +39,12 @@ end
   @test size(PlotAxes.asplotable(X)[1],1) == length(X)
 end
 
-# errors for inverse are pretty bad particularly for ratef: I think this might
-# be about the bandonly, that's what I'm working on (but I'm getting some
-# errors) NOTE: that also means I should test the bandonly separately
-
 @testset "Single dimension cortical model" begin
-  scalef = scalefilter(bandonly=false)
+  scalef = scalefilter()
   S_cr = filt(scalef,X)
   S_X̂ = filt(inv(scalef),S_cr)
 
-  ratef = ratefilter(bandonly=false)
+  ratef = ratefilter()
   R_cr = filt(ratef,X)
   R_X̂ = filt(inv(ratef),R_cr)
 
@@ -65,22 +61,28 @@ end
 end
 
 @testset "Multi dimensional cortical model" begin
-  cortical = scalef ∘ ratef
-  cr = filt(cortical,X)
-  X̂ = filt(inv(cortical),X)
+  cort = cortical()
+  cr = filt(cort,X)
+  X̂ = filt(inv(cort),cr)
 
+  # TODO: fix tests
   @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
     mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
-  @test mean(abs,R_cr[:,:,0.9kHz ..1.1kHz]) >
-    mean(abs,R_cr[:,:,1.9kHz .. 2.1kHz])
-  @test quantile(vec((S_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
-  @test quantile(vec((R_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
-  @test isempty(setdiff(scales(S_cr),default_scales))
-  @test isempty(setdiff(rates(R_cr),default_rates))
-  @test freq_ticks(S_cr) == freq_ticks(X)
-  @test freq_ticks(R_cr) == freq_ticks(X)
+  @test quantile(vec((X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test isempty(setdiff(scales(cr),default_scales))
+  @test isempty(setdiff(rates(cr),default_rates))
+  @test freq_ticks(cr) == freq_ticks(X)
 end
 
-# @testset "Repeated axis cortical model" begin
-#   # TODO
-# end
+@testset "Repeated axis cortical model" begin
+  cort = cortical()
+  cr = filt(cort,X)
+
+  ratef = ratefilter(axis=:rateslow)
+  crR = filt(ratef,cr)
+  @test ndims(crR) == 5
+
+  ratef = ratefilter()
+  @test_throws(ArgumentError("axis name :rate is used more than once"),
+    filt(ratef,cr))
+end
