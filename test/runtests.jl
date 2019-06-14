@@ -93,6 +93,19 @@ end
   @test freq_ticks(cr) == freq_ticks(X)
 end
 
+
+@testset "Data is plottable" begin
+  @test size(PlotAxes.asplotable(X)[1],1) == length(X)
+  @test size(PlotAxes.asplotable(S_cr,quantize=(1000,1000,20,20))[1],1) == length(S_cr)
+  @test size(PlotAxes.asplotable(R_cr,quantize=(1000,1000,20,20))[1],1) == length(R_cr)
+  @test size(PlotAxes.asplotable(cr,quantize=(1000,1000,20,20))[1],1) == length(cr)
+
+  @test size(PlotAxes.asplotable(X,quantize=(5,5,5,5))[1],1) < length(X)
+  @test size(PlotAxes.asplotable(S_cr,quantize=(5,5,5,5))[1],1) < length(S_cr)
+  @test size(PlotAxes.asplotable(R_cr,quantize=(5,5,5,5))[1],1) < length(R_cr)
+  @test size(PlotAxes.asplotable(cr,quantize=(5,5,5,5))[1],1) < length(cr)
+end
+
 @testset "Repeated axis cortical model" begin
   cort = cortical()
   cr = filt(cort,X)
