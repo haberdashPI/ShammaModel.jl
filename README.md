@@ -1,7 +1,8 @@
 # ShammaModel
 
-A somewhat minimal implementation of the auditory spectrogram (`audiospect`)
-and cortical model (`cortical`) as described in the following paper:
+A somewhat minimal implementation of the auditory spectrogram (`Audiospect`)
+and cortical model (`cortical`, `scalefitler`, `ratefilter`) as described in the following paper:
+Refer to the documentation of each function (ala ? at the REPL)for more information.
 
 [Chi, T., Ru, P., & Shamma, S. A. (2005). Multiresolution spectrotemporal
 analysis of complex sounds. The Journal of the Acoustical Society of America,
@@ -14,7 +15,7 @@ You can find the original MATLAB implementation of these models
 
 These functions are quite stable; I'm using them extensively in another project.
 I have not put much work into documenting the interface yet, but it is relatively
-straighforward to use. Take a look at `test/runtests.jl` for some examples.
+straighforward to use. Take a look at `test/runtests.jl` for examples.
 
 ## TODO
 

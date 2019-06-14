@@ -105,6 +105,28 @@ fromaxis(x::TimeRateFilter) = :time
 AxisArrays.axisnames(x::TimeRateFilter) = (x.axis,)
 Base.length(x::TimeRateFilter) = length(x.data)
 
+"""
+    ratefilter(rates,bandonly=false,axis=:rate)
+
+Define a temporal-rate filter bank at the given rates (assumed to be in
+Hz by default, but can be specified in a different unit via `Unitful`).
+The rates can be either a positional or keyword argument. To compute
+use inverse of the filter-bank call `inv`. Uses default_rates
+if the rates are unspecified.
+
+Apply the filter bank using `filt`, like so:
+
+```julia
+using FileIO
+using ShammaModel
+
+x = load("testsound.wav")
+X = filt(audiospect,x)
+ratef = ratefilter()
+R_cr = filt(ratef,X)
+```
+
+"""
 function ratefilter(r=default;rates=withdefault(r,default_rates),
   bandonly=false,axis=:rate)
   checkmatch(r,rates,"rates")
@@ -144,6 +166,27 @@ list_filters(fir,cs,scales::FreqScaleFilter) =
   ((Axis{axisname(scales)}(i), [HS; zero(HS)]') 
    for (i,HS) in enumerate(scale_filters(fir,cs,axisname(scales))))
 
+"""
+    scalefilter(scales,bandonly=false,axis=:rate)
+
+Define a spectral-scale filter bank at the given scales (assumed to be in
+cycles/octave). The scales can be either a positional or keyword argument. To
+compute use inverse of the filter-bank call `inv`. Uses default_scales if the 
+scales are unspecified.
+
+Apply the filter bank using `filt`, like so:
+
+```julia
+using FileIO
+using ShammaModel
+
+x = load("testsound.wav")
+X = filt(audiospect,x)
+scalef = scalefilter()
+S_cr = filt(scalef,X)
+```
+
+"""
 function scalefilter(s=default;scales=withdefault(s,default_scales),
     bandonly=false,axis=:scale)
   checkmatch(s,scales,"scales")
@@ -173,6 +216,27 @@ struct ScaleRateFilter <: CorticalFilter
   rates::TimeRateFilter
 end
 
+"""
+    cortical(scales,rates,bandonly=false,axis=:rate)
+
+Define a joint scale-rate filter bank at the given scales and rates (these
+are assumed to be in cycles per octave and Hz respectively, but can be
+specified with different units via `Unitful`). The scales and rates can be
+either both as positional arguments or both as keyword arguments. To compute
+use inverse of the filter-bank call `inv`.
+
+Apply the filter bank using `filt`, like so:
+
+```julia
+using FileIO
+using ShammaModel
+
+x = load("testsound.wav")
+X = filt(audiospect,x)
+cortf = cortical()
+cr = filt(cortf,X)
+```
+"""
 function cortical(s=default,r=default;
     scales=withdefault(s,default_scales),
     rates=withdefault(r,default_rates),

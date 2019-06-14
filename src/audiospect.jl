@@ -9,7 +9,7 @@ using Unitful: s
 
 export frequencies, times, nfrequencies, ntimes, delta_t, delta_f, Δt, Δf, 
   frame_length, audiospect, freq_ticks, duration, hastimes, HasTimes, HasNoTimes,
-  timedim, describe_axes, Audiospect, AudiospectInv, audiospect⁻
+  timedim, describe_axes, Audiospect, AudiospectInv, filt
 
 ########################################
 # cochlear filters
@@ -91,6 +91,26 @@ asseconds(x::Quantity) = uconvert(s,x)
 asHz(x::Number) = x*Hz
 asHz(x::Quantity) = uconvert(Hz,x)
 
+"""
+    Audiospect(Δt=10ms,freq_step=1,decay_tc=8,nonlinear=-2,octave_shift=-1)
+
+Keyword argument constructor for an auditory spectrogram frequency
+filterbank. Can be applied to a time amplitude signal using `filt`, like so:
+
+```julia
+using ShammaModel
+using FileIO
+
+as = Audiospect()
+spect = filt(as,load("testsound.wav"))
+```
+
+To compute the inverse, you can call `inv` and run `filt` on the result, like so:
+
+```julia
+save("approxsound.wav",filter(inv(as),spect)))
+```
+"""
 function Audiospect(;delta_t=10ms,Δt=delta_t,
                           freq_step=1,decay_tc=8,nonlinear=-2,
                           octave_shift=-1)
