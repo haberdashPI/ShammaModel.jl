@@ -35,6 +35,18 @@ const default_rates = sort([-2 .^ (1:0.5:5); 2 .^ (1:0.5:5)]).*Hz
 const default_scales = (2 .^ (-2:0.5:3)).*cycoct
 const spect_rate = 24
 
+struct DefaultValue
+end
+const default = DefaultValue()
+withdefault(x,default) = x
+withdefault(::DefaultValue,default) = default
+function checkmatch(pos,kwd,name) 
+  if pos !== kwd
+    error("Cannot specify both a position and keyword value for $name.")
+  end
+end
+checkmatch(::DefaultValue,x,str) = nothing
+
 ascycoct(x) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
 
@@ -93,7 +105,10 @@ fromaxis(x::TimeRateFilter) = :time
 AxisArrays.axisnames(x::TimeRateFilter) = (x.axis,)
 Base.length(x::TimeRateFilter) = length(x.data)
 
-function ratefilter(rates=default_rates;bandonly=false,axis=:rate)
+function ratefilter(r=default;rates=withdefault(r,default_rates),
+  bandonly=false,axis=:rate)
+  checkmatch(r,rates,"rates")
+
   if axis != :rate && !occursin("rate",string(axis))
     error("Rate axis name `$axis` must contain the word 'rate'.")
   end
@@ -129,7 +144,10 @@ list_filters(fir,cs,scales::FreqScaleFilter) =
   ((Axis{axisname(scales)}(i), [HS; zero(HS)]') 
    for (i,HS) in enumerate(scale_filters(fir,cs,axisname(scales))))
 
-function scalefilter(scales=default_scales;bandonly=false,axis=:scale)
+function scalefilter(s=default;scales=withdefault(s,default_scales),
+    bandonly=false,axis=:scale)
+  checkmatch(s,scales,"scales")
+  
   if axis != :scale && !occursin("scale",string(axis))
     error("Scale axis name `$axis` must contain the word 'scale'.")
   end
@@ -155,8 +173,13 @@ struct ScaleRateFilter <: CorticalFilter
   rates::TimeRateFilter
 end
 
-function cortical(scales=default_scales,rates=default_rates;bandonly=false,
-    axes=(:scale,:rate))
+function cortical(s=default,r=default;
+    scales=withdefault(s,default_scales),
+    rates=withdefault(r,default_rates),
+    bandonly=false,axes=(:scale,:rate))
+
+    checkmatch(s,scales,"scales")
+    checkmatch(r,rates,"rates")
 
     ScaleRateFilter(scalefilter(scales,bandonly=bandonly,axis=axes[1]),
                     ratefilter(rates,bandonly=bandonly,axis=axes[2]))

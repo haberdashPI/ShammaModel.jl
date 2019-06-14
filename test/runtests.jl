@@ -35,8 +35,27 @@ as_x_hat = filt(audiospect,x_hat)
 end
 
 # TODO: add tests for plotting cortical data as well
-@testset "Data is plottable" begin
-  @test size(PlotAxes.asplotable(X)[1],1) == length(X)
+
+@testset "Cortical model supports both positional and keyword interface." begin
+  sc = [1cycoct, 2cycoct]
+  rt = [1Hz, 2Hz]
+
+  @test scalefilter(sc).data ==
+    scalefilter(scales=sc).data
+  @test ratefilter(rt).data == ratefilter(rates=rt).data
+  cr1 = cortical(sc, rt)
+  cr2 = cortical(scales=sc, rates=rt)
+  @test cr1.scales.data == cr2.scales.data
+  @test cr1.rates.data == cr2.rates.data
+
+  msg = "Cannot specify both a position and keyword value for scales."
+  @test_throws ErrorException(msg) scalefilter(sc.+1cycoct,scales=sc)
+  msg = "Cannot specify both a position and keyword value for rates."
+  @test_throws ErrorException(msg) ratefilter(rt.+1Hz,rates=rt)
+  msg = "Cannot specify both a position and keyword value for scales."
+  @test_throws ErrorException(msg) cortical(sc.+1cycoct,scales=sc)
+  msg = "Cannot specify both a position and keyword value for rates."
+  @test_throws ErrorException(msg) cortical(default_scales,rt.+1Hz,rates=rt)
 end
 
 @testset "Single dimension cortical model" begin
