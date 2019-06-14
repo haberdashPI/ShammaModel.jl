@@ -14,6 +14,8 @@ err = 0.05
 x_hat = filt(inv(audiospect,target_error=err,max_iterations=1000),X)
 as_x_hat = filt(audiospect,x_hat)
 
+@testset "ShammaModel" begin
+
 @testset "Spectrogram" begin
   @test_throws ErrorException filt(audiospect,SampleBuf(collect(1:10),4000))
   @test mean(X[:,0.9kHz ..1.1kHz]) > mean(X[:,1.9kHz .. 2.1kHz])
@@ -35,8 +37,43 @@ as_x_hat = filt(audiospect,x_hat)
 end
 
 # TODO: add tests for plotting cortical data as well
+scalef = scalefilter()
+S_cr = filt(scalef,X)
+S_X̂ = filt(inv(scalef),S_cr)
 
-@testset "Cortical model supports both positional and keyword interface." begin
+ratef = ratefilter()
+R_cr = filt(ratef,X)
+R_X̂ = filt(inv(ratef),R_cr)
+
+cort = cortical()
+cr = filt(cort,X)
+
+@testset "Single dimension cortical model" begin
+  @test mean(abs,S_cr[:,:,0.9kHz ..1.1kHz]) >
+    mean(abs,S_cr[:,:,1.9kHz .. 2.1kHz])
+  @test mean(abs,R_cr[:,:,0.9kHz ..1.1kHz]) >
+    mean(abs,R_cr[:,:,1.9kHz .. 2.1kHz])
+  @test quantile(vec((S_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test quantile(vec((R_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test isempty(setdiff(scales(S_cr),default_scales))
+  @test isempty(setdiff(rates(R_cr),default_rates))
+  @test freq_ticks(S_cr) == freq_ticks(X)
+  @test freq_ticks(R_cr) == freq_ticks(X)
+end
+
+@testset "Multi dimensional cortical model" begin
+  X̂ = filt(inv(cort),cr)
+
+  # TODO: fix tests
+  @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
+    mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
+  @test quantile(vec((X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
+  @test isempty(setdiff(scales(cr),default_scales))
+  @test isempty(setdiff(rates(cr),default_rates))
+  @test freq_ticks(cr) == freq_ticks(X)
+end
+
+@testset "Position and keyword arugment support" begin
   sc = [1cycoct, 2cycoct]
   rt = [1Hz, 2Hz]
 
@@ -58,42 +95,6 @@ end
   @test_throws ErrorException(msg) cortical(default_scales,rt.+1Hz,rates=rt)
 end
 
-@testset "Single dimension cortical model" begin
-  scalef = scalefilter()
-  S_cr = filt(scalef,X)
-  S_X̂ = filt(inv(scalef),S_cr)
-
-  ratef = ratefilter()
-  R_cr = filt(ratef,X)
-  R_X̂ = filt(inv(ratef),R_cr)
-
-  @test mean(abs,S_cr[:,:,0.9kHz ..1.1kHz]) >
-    mean(abs,S_cr[:,:,1.9kHz .. 2.1kHz])
-  @test mean(abs,R_cr[:,:,0.9kHz ..1.1kHz]) >
-    mean(abs,R_cr[:,:,1.9kHz .. 2.1kHz])
-  @test quantile(vec((S_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
-  @test quantile(vec((R_X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
-  @test isempty(setdiff(scales(S_cr),default_scales))
-  @test isempty(setdiff(rates(R_cr),default_rates))
-  @test freq_ticks(S_cr) == freq_ticks(X)
-  @test freq_ticks(R_cr) == freq_ticks(X)
-end
-
-@testset "Multi dimensional cortical model" begin
-  cort = cortical()
-  cr = filt(cort,X)
-  X̂ = filt(inv(cort),cr)
-
-  # TODO: fix tests
-  @test mean(abs,cr[:,:,:,0.9kHz ..1.1kHz]) >
-    mean(abs,cr[:,:,:,1.9kHz .. 2.1kHz])
-  @test quantile(vec((X̂ .- X).^2 ./ mean(abs2,X)),0.75) < 5e-3
-  @test isempty(setdiff(scales(cr),default_scales))
-  @test isempty(setdiff(rates(cr),default_rates))
-  @test freq_ticks(cr) == freq_ticks(X)
-end
-
-
 @testset "Data is plottable" begin
   @test size(PlotAxes.asplotable(X)[1],1) == length(X)
   @test size(PlotAxes.asplotable(S_cr,quantize=(1000,1000,20,20))[1],1) == length(S_cr)
@@ -107,8 +108,6 @@ end
 end
 
 @testset "Repeated axis cortical model" begin
-  cort = cortical()
-  cr = filt(cort,X)
 
   ratef = ratefilter(axis=:rateslow)
   crR = filt(ratef,cr)
@@ -117,4 +116,6 @@ end
   ratef = ratefilter()
   @test_throws(ArgumentError("axis name :rate is used more than once"),
     filt(ratef,cr))
+end
+
 end
