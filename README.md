@@ -15,7 +15,7 @@ You can find the original MATLAB implementation of these models
 
 These functions are quite stable; I'm using them extensively in another project.
 I have not put much work into documenting the interface yet, but it is relatively
-straighforward to use. Take a look at `test/runtests.jl` for examples.
+straightforward to use. Take a look at `test/runtests.jl` for examples.
 
 ## TODO
 
