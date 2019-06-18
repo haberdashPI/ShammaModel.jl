@@ -47,8 +47,9 @@ function checkmatch(pos,kwd,name)
 end
 checkmatch(::DefaultValue,x,str) = nothing
 
-ascycoct(x) = x*cycoct
+ascycoct(x::Number) = x*cycoct
 ascycoct(x::Quantity) = uconvert(cycoct,x)
+ascycoct(x::Quantity{<:Any,Sc}) = x
 
 abstract type CorticalFilter
 end
@@ -130,6 +131,7 @@ R_cr = filt(ratef,X)
 function ratefilter(r=default;rates=withdefault(r,default_rates),
   bandonly=false,axis=:rate)
   checkmatch(r,rates,"rates")
+  rates = asHz.(rates)
 
   if axis != :rate && !occursin("rate",string(axis))
     error("Rate axis name `$axis` must contain the word 'rate'.")
@@ -190,6 +192,7 @@ S_cr = filt(scalef,X)
 function scalefilter(s=default;scales=withdefault(s,default_scales),
     bandonly=false,axis=:scale)
   checkmatch(s,scales,"scales")
+  scales = ascycoct.(scales)
   
   if axis != :scale && !occursin("scale",string(axis))
     error("Scale axis name `$axis` must contain the word 'scale'.")
@@ -244,6 +247,8 @@ function cortical(s=default,r=default;
 
     checkmatch(s,scales,"scales")
     checkmatch(r,rates,"rates")
+    scales = ascycoct.(scales)
+    rates = asHz.(rates)
 
     ScaleRateFilter(scalefilter(scales,bandonly=bandonly,axis=axes[1]),
                     ratefilter(rates,bandonly=bandonly,axis=axes[2]))

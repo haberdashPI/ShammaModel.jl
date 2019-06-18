@@ -95,6 +95,11 @@ end
   @test_throws ErrorException(msg) cortical(default_scales,rt.+1Hz,rates=rt)
 end
 
+@testset "Handles implicit and explicit unit." begin
+  @test scalefilter([1cycoct]).data == scalefilter([1]).data
+  @test ratefilter([1Hz]).data == ratefilter([1]).data
+end
+
 @testset "Data is plottable" begin
   @test size(PlotAxes.asplotable(X)[1],1) == length(X)
   @test size(PlotAxes.asplotable(S_cr,quantize=(1000,1000,20,20))[1],1) == length(S_cr)
