@@ -170,23 +170,25 @@ end
 
 function filter_audiospect__(x::AbstractVector{T}, N, params::MetaAxisLike,
                            progressbar=true, internal_call=false) where {T}
-  M = length(params.freq.cochlear.filters)
+  step = params.freq.step
+  filters = params.freq.cochlear.filters[vcat(1:step:end-1,end)]
+  M = length(filters)
   Y = fill(zero(float(T)),N, M-1)
   Y_haircell = !internal_call ? nothing : fill(zero(T),length(x),M-1)
 
   last_haircell = x |>
     params.freq.cochlear.filters[M] |>
-    ion_channels(params) |>
-    haircell_membrane(params)
+    x -> ion_channels(x,params) |>
+    x -> haircell_membrane(x,params)
 
   progress = progressbar ? Progress(desc="Auditory Spectrogram: ",M-1) : nothing
   for ch = (M-1):-1:1
     # initial haircell transduction
     y,last_haircell = x |> 
-      params.freq.cochlear.filters[ch] |>
-      ion_channels(params) |>
-      haircell_membrane(params) |>
-      lateral_inhibition(last_haircell)
+      filters[ch] |>
+      x -> ion_channels(x,params) |>
+      x -> haircell_membrane(x,params) |>
+      x -> lateral_inhibition(x,last_haircell)
 
     # recitfication and temporal integration
     Y[:,ch] = y |> rectify |> temporal_integration(params,N)
@@ -202,7 +204,7 @@ function filter_audiospect__(x::AbstractVector{T}, N, params::MetaAxisLike,
     f = Axis{:freq}(frequencies(params))
     t = Axis{:time}(times(params,Y))
 
-    MetaAxisArray(params,AxisArray(Y[:,1:params.freq.step:end],t,f))
+    MetaAxisArray(params,AxisArray(Y,t,f))
   end
 end
 
@@ -309,27 +311,27 @@ end
 ################################################################################
 # private helper functions
 
-function ion_channels(params::MetaAxisLike)
+function ion_channels(x,params::MetaAxisLike)
   if params.freq.nonlinear > 0
-    x -> 1.0 ./ (1.0 .+ exp.(.-x./params.freq.nonlinear))
+    1.0 ./ (1.0 .+ exp.(.-x./params.freq.nonlinear))
   elseif params.freq.nonlinear == 0
-    x -> Float64.(x .> 0.0)
+    Float64.(x .> 0.0)
   elseif params.freq.nonlinear == -1
-    x -> max.(x,0.0)
+    max.(x,0.0)
   elseif params.freq.nonlinear == -2
-    identity
+    x
     # TODO: implement halfregu
   else
     error("Non linear factor of $fac not supported")
   end
 end
 
-function haircell_membrane(params)
+function haircell_membrane(x,params)
   if params.freq.nonlinear  != -2
     β = exp(-1/((1//2)*2^(4+params.freq.octave_shift)))
-    y -> filt([1.0],[1.0; -β],y)
+    filt([1.0],[1.0; -β],x)
   else
-    identity
+    x
   end
 end
 
@@ -348,11 +350,9 @@ function temporal_integration(params::MetaAxisLike,N)
   end
 end
 
-function lateral_inhibition(last_haircell)
-  function(y)
-    new_y = y .- last_haircell
-    new_y,y
-  end
+function lateral_inhibition(x,last_haircell)
+  new_x = x .- last_haircell
+  new_x,x
 end
 
 function inv_guess(params::MetaAxisLike,y::AbstractMatrix)

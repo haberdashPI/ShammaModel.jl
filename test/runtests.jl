@@ -21,6 +21,9 @@ as_x_hat = filt(audiospect,x_hat)
   @test mean(X[:,0.9kHz ..1.1kHz]) > mean(X[:,1.9kHz .. 2.1kHz])
   @test sum((as_x_hat .* (mean(X) / mean(as_x_hat)) .- X).^2) ./
     sum(X.^2) <= err
+  X_small = filt(Audiospect(freq_step=2),x)
+  @test nfrequencies(X_small) == 64
+  @test mean(X_small[:,0.9kHz ..1.1kHz]) > mean(X_small[:,1.9kHz .. 2.1kHz])
 
   @test eltype(filt(audiospect,collect(1:10))) == float(Int)
 
