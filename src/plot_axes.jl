@@ -1,15 +1,23 @@
+export logrange
+
+# like the log function, but if it is broadcasted over values that are close to
+# a range (in log space), it converts the result to a range representation
+logrange(x) = log(x)
+PlotAxes.fn_prefix(x::typeof(logrange)) = "log"
+function Base.Broadcast.broadcasted(f::typeof(logrange),vals)
+  logvals = log.(ustrip.(vals))
+  if std(diff(logvals)) < 1e-8
+    range(first(logvals),last(logvals),length=length(logvals))
+  else
+    logvals
+  end
+end
+
 function PlotAxes.asplotable(x::AuditorySpectrogram,args...;quantize=(100,128),
     kwds...)
-  logfreqs = log.(ustrip.(frequencies(x)))
-  # if it's essentially a range, make it a range
-  if std(diff(logfreqs)) < 1e-8
-    logfreqs = range(first(logfreqs),last(logfreqs),length=length(logfreqs))
-    x = AxisArray(getcontents(x),AxisArrays.axes(x,1),Axis{:logfreq}(logfreqs))
-  else
-    x = AxisArray(getcontents(x),AxisArrays.axes(x,1),Axis{:logfreq}(logfreqs))
-  end
+  args = replace(collect(args),:freq => (:freq => logrange))
 
-  asplotable(x,args...;quantize=quantize,kwds...)
+  asplotable(getcontents(x),args...;quantize=quantize,kwds...)
 end
 
 default_quantize(x) = (100,)
@@ -22,17 +30,13 @@ end
 function PlotAxes.asplotable(x::MetaAxisArray,ax1,axes...;
   quantize=default_quantize(ax1,axes...),kwds...)
   # TODO: handle time or freq not being present
+  args = (ax1,axes...)
+  args = replace(collect(args),:freq => (:freq => logrange))
+  infront = filter(!isnothing,indexin([:time,:freq => logrange],args))
+  others = setdiff(1:length(args),infront)
+  args = args[vcat(infront,others)]
 
-  logfreqs = log.(ustrip.(frequencies(x)))
-  otheraxes = AxisArrays.axes(x)[1:end-1]
-  others = axisnames(x)[2:end-1]
-  if std(diff(logfreqs)) < 1e-8
-    logfreqs = range(first(logfreqs),last(logfreqs),length=length(logfreqs))
-    x = AxisArray(getcontents(x),otheraxes...,Axis{:logfreq}(logfreqs))
-  else
-    x = AxisArray(getcontents(x),otheraxes...,Axis{:logfreq}(logfreqs))
-  end
-  asplotable(x,:time,:logfreq,others...;quantize=quantize,kwds...)
+  asplotable(getcontents(x),args...;quantize=quantize,kwds...)
 end
 
             
