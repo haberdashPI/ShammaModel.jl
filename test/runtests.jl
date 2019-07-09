@@ -115,6 +115,24 @@ end
   @test size(PlotAxes.asplotable(cr,quantize=(5,5,5,5))[1],1) < length(cr)
 end
 
+@testset "Data is printed in console" begin
+  iobuf = IOBuffer()
+  display(TextDisplay(iobuf), X)
+  @test length(String(take!(iobuf))) > 0
+
+  iobuf = IOBuffer()
+  display(TextDisplay(iobuf), S_cr)
+  @test length(String(take!(iobuf))) > 0
+
+  iobuf = IOBuffer()
+  display(TextDisplay(iobuf), R_cr)
+  @test length(String(take!(iobuf))) > 0
+
+  iobuf = IOBuffer()
+  display(TextDisplay(iobuf), cr)
+  @test length(String(take!(iobuf))) > 0
+end
+
 @testset "Repeated axis cortical model" begin
 
   ratef = ratefilter(axis=:rateslow)
