@@ -3,12 +3,11 @@ os:
   - linux
   - osx
 julia:
-  - 1.0
   - 1.1
   - 1.2
   - nightly
 script:
-- julia -e 'using Pkg; Pkg.Registry.add("https://github.com/haberdashPI/LabRegistry.jl")'
+- julia -e 'using Pkg; Pkg.Registry.add(RegistrySpec(url = "https://github.com/haberdashPI/LabRegistry.jl"))'
 - julia -e 'using Pkg; Pkg.build(); Pkg.test(coverage=true)'
 matrix:
   allow_failures:
